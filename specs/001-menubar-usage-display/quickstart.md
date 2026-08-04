@@ -54,14 +54,16 @@ python -c "import usage_parser; print(usage_parser.get_summary().entry_count)"
 **Expected**: prints an integer without an `ImportError`. If this fails, the
 pure-core/thin-UI separation has been violated.
 
-### V2 — Dropdown shows the required breakdowns (FR-003, FR-007)
+### V2 — Dropdown shows the required breakdowns, and no Dock presence (FR-002, FR-003, FR-007)
 
 Run the app and click the menu bar icon.
 
 **Expected**: the dropdown lists **Today**, **Current session**, **Last 5
 hours**, and **All time**, each with a token count. No percentage-of-quota and
 no reset countdown appear anywhere — those were removed by the FR-007
-amendment (see `research.md` R3).
+amendment (see `research.md` R3). Additionally, confirm no icon appears in the
+Dock and no entry appears when cycling with Cmd+Tab — the app must behave as a
+menu-bar-only accessory process, per FR-002.
 
 ### V3 — Deduplication is correct (SC-002, research R2)
 
@@ -161,10 +163,13 @@ budget is the documented trigger for moving the scan off the main thread.
 ## Test suite
 
 ```bash
+pip install -r requirements-dev.txt   # pytest, ruff (contributors only)
 pytest -q          # unit tests over tests/fixtures/*.jsonl
 ruff check .       # lint
 ```
 
-Both must pass; Constitution Principle III requires this be enforced by a hook,
-not left to convention. Fixture coverage is enumerated in `research.md` R11 —
-the duplicate-`message_id` fixture is the regression guard for V3.
+Both must pass; `.github/workflows/ci.yml` enforces this on every push/PR as
+the authoritative Constitution Principle III gate, not left to convention —
+the local `scripts/pre-commit` hook is an optional convenience only. Fixture
+coverage is enumerated in `research.md` R11 — the duplicate-`message_id`
+fixture is the regression guard for V3.

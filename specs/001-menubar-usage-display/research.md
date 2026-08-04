@@ -232,5 +232,7 @@ entries, and timezone boundary cases. No automated UI tests.
 
 **Rationale**: Constitution Principle II makes the parser importable without
 `rumps`, so the whole core is testable in isolation. Principle III requires
-lint plus tests enforced by a hook. The dedup behavior from R2 is the most
-important thing to pin with a regression test.
+lint plus tests enforced by CI (`.github/workflows/ci.yml`), with an optional
+local pre-commit convenience (`core.hooksPath`) for fast local feedback. The
+dedup behavior from R2 is the most important thing to pin with a regression
+test.

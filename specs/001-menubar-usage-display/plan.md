@@ -30,7 +30,7 @@ Phase 0 research against live data drove two decisions that shape the build:
 
 **Storage**: None. Every refresh recomputes from `~/.claude/projects/**/*.jsonl` (FR-011)
 
-**Testing**: `pytest` over checked-in fixture `.jsonl` files; `ruff` for lint. Both gated by a hook (Constitution III)
+**Testing**: `pytest` over checked-in fixture `.jsonl` files; `ruff` for lint. Enforced by CI (`.github/workflows/ci.yml`), with an optional local pre-commit convenience (`core.hooksPath`) for fast local feedback (Constitution III)
 
 **Target Platform**: macOS only (FR-012)
 
@@ -50,7 +50,7 @@ Phase 0 research against live data drove two decisions that shape the build:
 |-----------|------|-------------|--------------|
 | I. Minimal, justified stack | Python 3.11+; `rumps` the only UI dep; nothing new without stdlib justification | PASS | **PASS** — deps are `rumps` + stdlib. `watchdog` was considered for file watching and rejected (R9); `pytest`/`ruff` are dev-only and mandated by III |
 | II. Pure core, thin UI | Parsing/aggregation in a module free of `rumps`; UI only consumes it | PASS | **PASS** — `usage_parser.py` imports no UI module; contract forbids it and quickstart V1 tests it. All arithmetic lives in the core; `menubar_app.py` only reads fields and formats |
-| III. Quality enforced, not suggested | Lint + tests enforced by a hook, not convention | PASS | **PASS** — `pytest` + `ruff` wired to a pre-commit hook as a setup task; `aggregate()` is pure with injected `now`, so time-dependent logic is deterministically testable |
+| III. Quality enforced, not suggested | Lint + tests enforced by a hook, not convention | PASS | **PASS** — `.github/workflows/ci.yml` runs `pytest` + `ruff` on every push/PR as the authoritative gate, independent of any local developer action; `scripts/pre-commit` remains as an optional local convenience only. `aggregate()` is pure with injected `now`, so time-dependent logic is deterministically testable |
 | IV. No polished distribution for MVP | Clone + venv + pip only | PASS | **PASS** — install is `venv` + `pip install -r requirements.txt`. No py2app, signing, Homebrew, or LaunchAgent anywhere in scope |
 | V. Simplicity over generality | Reject complexity serving hypothetical needs | PASS | **PASS** — synchronous refresh (no threading) justified by the 45 ms measurement; no incremental-parse cache; no config file; no plugin/data-source abstraction |
 | Technical constraints | macOS only; local `.jsonl` only; no persistence | PASS | **PASS** — no network call exists in the design (quickstart V7 asserts it). The FR-007 quota conflict was resolved *by narrowing the requirement*, per the Governance clause, not by relaxing the constraint |
@@ -87,7 +87,9 @@ claude-usage-menubar/
 │   └── fixtures/            # Small .jsonl files: normal, duplicate message.id,
 │                            # malformed, empty, multi-day, multi-session,
 │                            # synthetic-model, timezone-boundary
-├── requirements.txt         # rumps (+ pytest, ruff for dev)
+├── requirements.txt         # rumps only (runtime)
+├── requirements-dev.txt     # pytest, ruff (contributors)
+├── .github/workflows/ci.yml # CI: ruff + pytest on every push/PR
 ├── README.md                # Install + run instructions (SC-001)
 └── LICENSE
 ```
@@ -108,7 +110,9 @@ dataclasses. Never raises, never caches, never opens a socket.
 **`menubar_app.py`** — a `rumps.App` with a static icon, a dropdown listing
 Today / Current session / Last 5 hours / All time, a manual Refresh item, and
 Quit. Calls `get_summary()` once at startup and on each `rumps.Timer` tick.
-Contains no arithmetic beyond delegating to `format_tokens()`.
+Contains no arithmetic beyond delegating to `format_tokens()`. Also owns
+suppressing the Dock icon (accessory activation policy) as part of its setup,
+so the process satisfies FR-002 as a menu-bar-only app.
 
 ## Phase 0 — Research (complete)
 
