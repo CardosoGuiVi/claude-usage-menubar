@@ -73,7 +73,7 @@ As a new user who has never used this tool before, I want to clone the repositor
 - **FR-004**: The app MUST derive all displayed usage data exclusively by reading local Claude Code session log files; it MUST NOT make any external network or API calls to produce that data.
 - **FR-005**: The app MUST NOT require any login, authentication, or account setup of its own.
 - **FR-006**: The app MUST refresh the displayed usage data automatically on a periodic interval, without requiring the user to manually trigger a refresh.
-- **FR-007**: The dropdown MUST present token usage broken down by at least a "today" total and a "current session" total, and for each breakdown it MUST show both (a) raw token counts (e.g., input/output/cache) and (b) a rate-limit-style percentage-of-plan-quota view with reset timing, matching the full framing Claude Code's own `/usage` command uses so the numbers are directly recognizable as consistent with it.
+- **FR-007**: The dropdown MUST present raw token counts (input, output, cache read, cache creation, and a combined total) broken down by at least a "today" total, a "current session" total, and a rolling recent-activity window. The app MUST NOT display percentage-of-plan-quota or quota reset timing: research confirmed that no rate-limit, quota, or reset data exists in the local session logs, and obtaining it would require a network call prohibited by FR-004, FR-005, and the project constitution. See `research.md` R3 for the evidence and the decision record.
 - **FR-008**: The app MUST show a clear, non-error empty/zero-usage state when no local session log data exists.
 - **FR-009**: The app MUST tolerate malformed, partial, or concurrently-written log entries without crashing.
 - **FR-010**: The app MUST be installable by cloning the public repository and running a documented process limited to creating a Python virtual environment and running `pip install`; it MUST NOT require code signing, a packaged/signed `.app` bundle, or Homebrew distribution.
@@ -90,7 +90,7 @@ As a new user who has never used this tool before, I want to clone the repositor
 ### Measurable Outcomes
 
 - **SC-001**: A first-time user can go from cloning the repository to seeing live usage data in their menu bar in under 5 minutes, using only the README instructions.
-- **SC-002**: Usage numbers shown in the dropdown are traceable back to, and consistent with, the same figures Claude Code's own `/usage` command produces from the same underlying local session data.
+- **SC-002**: Token-count figures shown in the dropdown are traceable back to, and consistent with, the same underlying local session data that powers Claude Code's own `/usage` command. Specifically, each assistant message is counted exactly once (no duplicate-line inflation). Quota-percentage parity is explicitly out of scope per FR-007.
 - **SC-003**: Newly-recorded Claude Code usage is reflected in the menu bar display within one polling interval (no more than a couple of minutes) without any user action.
 - **SC-004**: The app runs without errors or crashes when local usage logs are missing, empty, or only partially written.
 - **SC-005**: The entire setup and normal operation of the app requires zero network requests and zero credential entry.
@@ -102,4 +102,5 @@ As a new user who has never used this tool before, I want to clone the repositor
 - A single local user/machine and a single active Claude Code account are assumed; multi-account or multi-profile switching is out of scope for this version.
 - The menu bar icon itself does not need to render dynamic text or numbers; all usage figures are surfaced in the dropdown shown after a click, keeping the status bar presence minimal.
 - "Today" is defined using the local system clock/timezone, consistent with how a user would informally think about their day's usage.
-- Percentage-of-plan-quota and reset-timing figures are derived the same way Claude Code's own `/usage` command derives them from local data; if a given quota threshold cannot be determined locally, the app shows the raw token counts for that breakdown without a percentage rather than guessing at a limit.
+- Percentage-of-plan-quota and reset-timing figures are not available from local data (confirmed in Phase 0 research), so the app shows raw token counts only rather than guessing at a limit. This resolved an FR-007 conflict with the constitution's no-network constraint; see `research.md` R3.
+- Entries recorded with a `<synthetic>` model are locally generated placeholders rather than real API turns and are excluded from totals; subagent (sidechain) entries do consume real tokens and are included.
