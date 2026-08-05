@@ -113,9 +113,9 @@ the specific research findings they implement instead.
 
 **Purpose**: Final verification across the whole feature, not tied to a single story.
 
-- [ ] T023 [P] Run the full quickstart.md validation suite (V1–V8) end-to-end and record results
-- [ ] T024 [P] Run `ruff check .` across `usage_parser.py`, `menubar_app.py`, and `tests/`; fix any findings
-- [ ] T025 [depends: T023, T024] Audit `menubar_app.py` to confirm it contains no token arithmetic, bucketing, or file I/O of its own — every number displayed must trace to a `usage_parser` return value, per Constitution Principle II
+- [x] T023 [P] Run the full quickstart.md validation suite (V1–V8) end-to-end and record results
+- [x] T024 [P] Run `ruff check .` across `usage_parser.py`, `menubar_app.py`, and `tests/`; fix any findings
+- [x] T025 [depends: T023, T024] Audit `menubar_app.py` to confirm it contains no token arithmetic, bucketing, or file I/O of its own — every number displayed must trace to a `usage_parser` return value, per Constitution Principle II
 
 ---
 

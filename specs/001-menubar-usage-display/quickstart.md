@@ -173,3 +173,67 @@ the authoritative Constitution Principle III gate, not left to convention —
 the local `scripts/pre-commit` hook is an optional convenience only. Fixture
 coverage is enumerated in `research.md` R11 — the duplicate-`message_id`
 fixture is the regression guard for V3.
+
+---
+
+## Validation Results (T023)
+
+**Date**: 2026-08-04 · **Environment**: real `~/.claude/projects/` session
+logs on the dev checkout (V4/V5 used temporary directories as documented in
+their scenarios above; V6 used a monkeypatched `usage_parser.get_summary`
+pointed at a controlled temp directory with a directly-invoked timer
+callback, per the T019 precedent, rather than a literal 60 s wait on real
+new usage). All scenarios run end-to-end in a single consolidated pass
+against the final state of the codebase (`usage_parser.py`, `menubar_app.py`
+as they stand after T001–T022).
+
+| ID | Scenario | Result | Evidence |
+|----|----------|--------|----------|
+| V1 | Core importable without `rumps` (Constitution II) | PASS | `python3 -c "import usage_parser; print(usage_parser.get_summary().entry_count)"` run under a system Python with no `rumps` installed → printed `1789`, exit 0, no `ImportError` |
+| V2 | Dropdown breakdowns + no Dock/Cmd+Tab presence | PASS | App launched (`menubar_app.py`); `osascript`/System Events confirmed the running "Python" process has `background only: true` (no Dock icon, no Cmd+Tab entry). Live `UsageMenuBarApp` instance's menu items read: `'Today: 112.6M'`, `'Current Session: 51.1M'`, `'Last 5 Hours: 30.4M'`, `'All Time: 184.7M'`, `'No usage data found'` (hidden), `'Refresh'` — all four required breakdowns present; `grep -i "quota\|percent\|%"` over `menubar_app.py`/`usage_parser.py` returned no matches, confirming no quota/percentage/reset UI exists |
+| V3 | Deduplication correctness (SC-002) | PASS | Reference dedup script and `usage_parser.get_summary()` run back-to-back in one process against the same live corpus: `deduplicated: 184,824,396` == `app all_time: 184,824,396` (`1,800` unique turns matched `entry_count: 1,800`); naive (non-deduplicated) total in the same run was `~2x` larger, confirming dedup is active and correct |
+| V4 | Empty state does not crash (FR-008) | PASS | `usage_parser.get_summary(Path('/tmp/definitely-not-here'))` → printed `0 0 None`, exit 0, no traceback |
+| V5 | Malformed input survivable (FR-009) | PASS | 3-line file (`not json` / valid-but-incomplete / truncated JSON) under `/tmp/ct/proj/s.jsonl` → `entries: 0 skipped: 3`, exit 0, no traceback |
+| V6 | Auto-refresh reflects new usage, no drift when idle (FR-006, SC-003) | PASS | Adapted per T019: monkeypatched `usage_parser.get_summary` to a controlled temp dir, instantiated `UsageMenuBarApp`, stopped the real 60 s timer, and invoked `_on_timer(None)` directly. No-op tick: `Today`/`Last 5 Hours` titles unchanged (`'Today: 150'` both before and after). After appending a new usage line to the temp `.jsonl` and invoking `_on_timer(None)` again: titles changed to `'Today: 1.4K'` / `'Last 5 Hours: 1.4K'` — increase confirmed with no user action |
+| V7 | No network traffic (FR-004, SC-005) | PASS | `socket.socket = None` sabotage, then `usage_parser.get_summary().entry_count` → printed `1811`, exit 0, no traceback |
+| V8 | Refresh stays fast (research R9) | PASS | Three consecutive timed runs of `usage_parser.get_summary()` on the live corpus (~1,800+ entries across 61 `.jsonl` files): `72 ms`, `71 ms`, `71 ms` — well under the 500 ms budget |
+
+**Summary**: 8/8 PASS. `pytest -q` (13 tests, after the FR-007 breakdown fix added tests/test_menubar_app.py) also re-confirmed green before
+and after this pass. No discrepancies found; no code changes were required
+by this validation run. Minor observed non-determinism in V3's exact token
+counts across *separate* invocations (e.g. `184,766,513` vs. `184,824,396`
+vs. `184,795,365` in earlier isolated runs) is expected and benign: this
+validation was itself run from an active Claude Code session, which
+continuously appends new entries to `~/.claude/projects/` while the checks
+execute — the authoritative V3 comparison above was taken from both sides
+computed within a single process invocation to eliminate that skew.
+
+---
+
+## Constitution II Audit (T025)
+
+**Date**: 2026-08-04. Line-by-line audit of the final `menubar_app.py`
+(post-T013–T018) against Constitution Principle II ("pure core / thin UI" —
+`menubar_app.py` may read and format `usage_parser` output, but must
+perform no parsing, bucketing, or arithmetic of its own).
+
+| Check | Method | Result |
+|---|---|---|
+| No `+`/`-`/`*`/`/` applied to token counts | `grep -nE '[a-zA-Z_\.]+ *[+\-*/] *[a-zA-Z0-9_\.]+' menubar_app.py` | Only matches were prose inside comments/docstrings (e.g. "Last 5 Hours", "60 s timer", "T018"); zero arithmetic operators applied to any token/numeric identifier in executable code |
+| No date/time bucketing logic | `grep -nE '\.date\(\)\|timedelta\|datetime\|astimezone\|tzinfo' menubar_app.py` | No matches — the file contains no `datetime` import and no time comparison of any kind |
+| No file I/O | `grep -nE 'open\(\|glob\(\|json\.load\|Path\(' menubar_app.py` | No matches |
+| No `import json` / direct file-reading imports | `grep -nE '^import\|^from' menubar_app.py` | Exactly three imports: `AppKit`, `rumps`, `usage_parser` — no `json`, no `pathlib` |
+| Every displayed number traces to `usage_parser` | `grep -n "summary\.\|format_tokens(" menubar_app.py` | `summary` is assigned once, at `summary = usage_parser.get_summary()` (`_refresh()`). All four dropdown values are `usage_parser.format_tokens(summary.<bucket>.total)` for `<bucket>` in `today`, `current_session`, `rolling_5h`, `all_time` — `.total` is a `TokenTotals` property defined and summed in `usage_parser.py`, not in `menubar_app.py`. The only other field read is `summary.entry_count`, compared (not computed) against `0` to pick the empty-state branch (FR-008) |
+| `usage_parser.py` doesn't import `rumps`/`AppKit` (cross-check of T012) | `grep -nE '^import\|^from' usage_parser.py` | `from __future__ import annotations`, `json`, `dataclasses`, `datetime`, `pathlib` — no `rumps`, no `AppKit` |
+
+**Conclusion**: PASS. `menubar_app.py` performs no token arithmetic, no
+date/time bucketing, and no file I/O; every number it displays is a direct
+field/property read off the `UsageSummary`/`TokenTotals` returned by
+`usage_parser.get_summary()`, passed through `usage_parser.format_tokens()`.
+The pure-core/thin-UI split (Constitution Principle II) holds in both
+directions: `menubar_app.py` imports only `AppKit`, `rumps`, and
+`usage_parser`, and `usage_parser.py` imports neither `rumps` nor `AppKit`.
+No code changes were required by this audit.
+
+`pytest -q` (13 tests, after the FR-007 breakdown fix added tests/test_menubar_app.py) and `ruff check .` both re-confirmed green as part of
+this final task.
