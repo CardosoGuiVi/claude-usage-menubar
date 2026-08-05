@@ -1,0 +1,167 @@
+"""Unit tests for `menubar_app.UsageMenuBarApp`'s menu-building logic.
+
+Per `research.md` R11, the MVP deliberately has no automated tests that
+drive a real `NSApplication` event loop (that remains manual/empirical, as
+documented in `specs/001-menubar-usage-display/tasks.md` T016/T019 and
+verified by whoever implements a `menubar_app.py` change). These tests do
+not call `rumps.App.run()` — `rumps.App.__init__` never touches the real
+menu bar (`NSStatusItem` is only created inside `run()`, see
+`.venv/.../rumps/rumps.py`'s `App.run()`), so `UsageMenuBarApp()` can be
+instantiated and its `_refresh()` called directly, off the real event
+loop, without spinning up any UI. That keeps these tests fast and
+non-flaky while still exercising real `rumps.MenuItem`/`Menu` objects
+(not mocks), matching this project's "pure core / thin UI" boundary: only
+`menubar_app`'s own menu-construction and title-updating logic is under
+test here — `usage_parser.get_summary()` itself is monkeypatched so these
+tests are independent of any real local Claude Code session data.
+"""
+
+from __future__ import annotations
+
+from unittest import mock
+
+import pytest
+
+import menubar_app
+import usage_parser
+from usage_parser import TokenTotals, UsageSummary
+
+
+def _make_summary() -> UsageSummary:
+    """A non-empty `UsageSummary` with distinct values per bucket/category
+    so a title mismatch in any of the 20 rendered numbers is unambiguous.
+    """
+    return UsageSummary(
+        today=TokenTotals(input=1, output=2, cache_read=3, cache_creation=4),
+        current_session=TokenTotals(
+            input=10, output=20, cache_read=30, cache_creation=40
+        ),
+        rolling_5h=TokenTotals(
+            input=100, output=200, cache_read=300, cache_creation=400
+        ),
+        all_time=TokenTotals(
+            input=1000, output=2000, cache_read=3000, cache_creation=4000
+        ),
+        current_session_id="session-1",
+        entry_count=1,
+    )
+
+
+@pytest.fixture
+def app():
+    """A `UsageMenuBarApp` instantiated with a stubbed `get_summary()`.
+
+    Patches `usage_parser.get_summary` for the duration of each test (the
+    same function object `menubar_app` calls, per the module-level `import
+    usage_parser` + `usage_parser.get_summary()` call convention already
+    used throughout `menubar_app.py`) so no real local session log data is
+    read. `UsageMenuBarApp.__init__` calls `_refresh()` once already, so
+    the returned app is immediately populated from `_make_summary()`.
+    """
+    with mock.patch.object(usage_parser, "get_summary", return_value=_make_summary()):
+        yield menubar_app.UsageMenuBarApp()
+
+
+def test_all_four_buckets_expose_five_numbers_each(app):
+    """FR-007: each bucket must show total, input, output, cache read, and
+    cache creation -- five numbers, not just the combined total.
+    """
+    buckets = [
+        ("Today", app._today_item, app._today_children, _make_summary().today),
+        (
+            "Current Session",
+            app._session_item,
+            app._session_children,
+            _make_summary().current_session,
+        ),
+        (
+            "Last 5 Hours",
+            app._rolling_5h_item,
+            app._rolling_5h_children,
+            _make_summary().rolling_5h,
+        ),
+        (
+            "All Time",
+            app._all_time_item,
+            app._all_time_children,
+            _make_summary().all_time,
+        ),
+    ]
+
+    data_points = 0
+    for label, parent, children, totals in buckets:
+        assert parent.title == f"{label}: {usage_parser.format_tokens(totals.total)}"
+        assert len(children) == 4
+        input_item, output_item, cache_read_item, cache_creation_item = children
+        assert input_item.title == f"Input: {usage_parser.format_tokens(totals.input)}"
+        assert (
+            output_item.title == f"Output: {usage_parser.format_tokens(totals.output)}"
+        )
+        assert (
+            cache_read_item.title
+            == f"Cache Read: {usage_parser.format_tokens(totals.cache_read)}"
+        )
+        assert (
+            cache_creation_item.title
+            == f"Cache Creation: {usage_parser.format_tokens(totals.cache_creation)}"
+        )
+        data_points += 5  # total + 4 categories
+
+    assert data_points == 20
+
+
+def test_submenu_children_added_exactly_once_across_repeated_refresh(app):
+    """Repeated `_refresh()` calls must update titles in place, never
+    re-add submenu children (which would duplicate/leak menu items) --
+    the same stable-item invariant already relied on for the four
+    top-level items.
+    """
+    assert len(list(app._today_item.values())) == 4
+
+    for _ in range(5):
+        app._refresh()
+
+    assert len(list(app._today_item.values())) == 4
+    assert len(list(app._session_item.values())) == 4
+    assert len(list(app._rolling_5h_item.values())) == 4
+    assert len(list(app._all_time_item.values())) == 4
+
+
+def test_empty_state_hides_buckets_and_shows_empty_item(app):
+    """FR-008: when there is no local usage data at all, the four
+    top-level bucket items (and, with them, their submenus) are hidden and
+    the explicit empty-state item is shown instead.
+    """
+    with mock.patch.object(
+        usage_parser, "get_summary", return_value=UsageSummary(entry_count=0)
+    ):
+        app._refresh()
+
+    assert app._today_item.hidden
+    assert app._session_item.hidden
+    assert app._rolling_5h_item.hidden
+    assert app._all_time_item.hidden
+    assert not app._empty_state_item.hidden
+
+    # Submenu children survive untouched (not removed/duplicated) even
+    # while their parent is hidden.
+    assert len(list(app._today_item.values())) == 4
+
+
+def test_empty_state_then_real_data_restores_buckets(app):
+    """Recovering from the empty state on a later refresh (e.g. the user's
+    first session just got written) must re-show the bucket items and the
+    empty-state item must hide again, without leaking extra menu items.
+    """
+    with mock.patch.object(
+        usage_parser, "get_summary", return_value=UsageSummary(entry_count=0)
+    ):
+        app._refresh()
+
+    with mock.patch.object(usage_parser, "get_summary", return_value=_make_summary()):
+        app._refresh()
+
+    assert not app._today_item.hidden
+    assert app._empty_state_item.hidden
+    assert app._today_item.title == "Today: 10"
+    assert len(list(app._today_item.values())) == 4
