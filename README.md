@@ -34,7 +34,8 @@ and quit the app from the dropdown's **Quit** item.
 
 The app reads your Claude Code session logs under `~/.claude/projects/` and
 sums the token usage recorded on each assistant turn (deduplicated, since
-Claude Code writes the same turn's usage on more than one line):
+Claude Code writes the same turn's usage on more than one line), broken down
+into four time buckets:
 
 - **Today** — total tokens used since local midnight.
 - **Current Session** — total tokens used in your most recently active
@@ -42,6 +43,10 @@ Claude Code writes the same turn's usage on more than one line):
 - **Last 5 Hours** — a rolling total over the last 5 hours, mirroring the
   session-window granularity Claude Code itself uses.
 - **All Time** — total tokens across every local session log found.
+
+Each bucket's dropdown row shows its combined total, and opening it as a
+submenu reveals the same total split into **Input**, **Output**, **Cache
+Read**, and **Cache Creation** token counts.
 
 ### Why isn't there a percentage-of-quota figure?
 
