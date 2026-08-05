@@ -100,9 +100,10 @@ the specific research findings they implement instead.
 
 ### Implementation for User Story 3
 
-- [ ] T020 [P] [US3] Write `README.md`: prerequisites, install (`git clone`, `python3 -m venv .venv`, `source .venv/bin/activate`, `pip install -r requirements.txt` — runtime only), run (`python menubar_app.py`), a short explanation of what Today/Current Session/Last 5 Hours/All Time mean and why there's no percentage-of-quota figure (per FR-007's resolution in `research.md` R3), and a **Contributing** section noting `pip install -r requirements-dev.txt` plus `pytest -q` / `ruff check .` for anyone running tests or lint
-- [ ] T021 [P] [US3] Add a `LICENSE` file (open-source distribution per the constitution's Project Purpose)
-- [ ] T022 [US3] [depends: T020, T021] Manually run quickstart.md V4 (missing log directory), V5 (malformed input survivability), and the Install section end-to-end on a fresh clone; confirm no undocumented steps were needed, and re-confirm no Dock icon or Cmd+Tab entry appears on this fresh install
+- [x] T020 [P] [US3] Write `README.md`: prerequisites, install (`git clone`, `python3 -m venv .venv`, `source .venv/bin/activate`, `pip install -r requirements.txt` — runtime only), run (`python menubar_app.py`), a short explanation of what Today/Current Session/Last 5 Hours/All Time mean and why there's no percentage-of-quota figure (per FR-007's resolution in `research.md` R3), and a **Contributing** section noting `pip install -r requirements-dev.txt` plus `pytest -q` / `ruff check .` for anyone running tests or lint
+- [x] T021 [P] [US3] Add a `LICENSE` file (open-source distribution per the constitution's Project Purpose)
+- [x] T022 [US3] [depends: T020, T021] Manually run quickstart.md V4 (missing log directory), V5 (malformed input survivability), and the Install section end-to-end on a fresh clone; confirm no undocumented steps were needed, and re-confirm no Dock icon or Cmd+Tab entry appears on this fresh install
+  > **Caveat**: at the time this ran, nothing was committed to git yet, so "fresh clone" was simulated via an rsync copy of the working tree (excluding gitignored paths), not a real `git clone`. Install/V4/V5/Dock-suppression all passed against that simulation. Re-run this validation against an actual `git clone` once this work is committed and pushed.
 
 **Checkpoint**: All three user stories are independently functional. Feature is complete for MVP scope.
 
