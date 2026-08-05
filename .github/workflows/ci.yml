@@ -1,0 +1,40 @@
+name: CI
+
+# Authoritative enforcement mechanism for Constitution Principle III.
+# Unlike scripts/pre-commit (an optional local convenience), this workflow
+# runs regardless of any local developer action, on every push and every
+# pull request.
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint-and-test:
+    # macOS-only app per the constitution (rumps requires macOS); using
+    # macos-latest keeps CI representative of the real target platform,
+    # even though usage_parser.py itself is pure-stdlib and
+    # platform-independent.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Run ruff check
+        run: ruff check .
+
+      - name: Run pytest
+        # Exit code 5 means "no tests collected", which is expected on
+        # early Setup-phase commits before the Foundational phase (T009+)
+        # adds the first tests. Tolerate it so CI isn't falsely red until
+        # then; any other non-zero exit code still fails the build.
+        run: pytest -q || [ $? -eq 5 ]

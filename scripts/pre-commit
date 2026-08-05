@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+#
+# OPTIONAL local convenience hook — NOT the Principle III enforcement
+# mechanism. The authoritative, always-runs quality gate for this project
+# is `.github/workflows/ci.yml`, which runs `ruff check .` and `pytest -q`
+# on every push and pull request regardless of local developer setup.
+#
+# This script exists purely for contributors who want fast local feedback
+# before pushing. To activate it as your git pre-commit hook, run once
+# from the repository root:
+#
+#   git config core.hooksPath scripts
+#
+# Running it is entirely optional; skipping it does not bypass CI.
+
+set -euo pipefail
+
+echo "Running ruff check ..."
+ruff check .
+
+echo "Running pytest ..."
+pytest -q
