@@ -30,7 +30,7 @@ class UsageMenuBarApp(rumps.App):
     """Menu bar app shell for displaying Claude Code usage."""
 
     def __init__(self):
-        super().__init__(name="Claude Usage", icon="claude.png", quit_button="Quit")
+        super().__init__(name="Claude Usage", icon="icon.png", template=True, quit_button="Quit")
 
         # Created once with stable identities and added to self.menu exactly
         # once. `rumps.App.run()` appends a "Quit" MenuItem to this same
