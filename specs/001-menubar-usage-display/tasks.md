@@ -84,9 +84,9 @@ the specific research findings they implement instead.
 
 ### Implementation for User Story 2
 
-- [ ] T017 [US2] [depends: T014] In `menubar_app.py`, add a `rumps.Timer` with a 60-second interval (per `research.md` R10) whose callback re-runs `usage_parser.get_summary()` and refreshes the same dropdown items built in T014
-- [ ] T018 [US2] [depends: T017] Add a manual "Refresh" menu item above "Quit" in `menubar_app.py` that triggers the same refresh callback as the timer, for on-demand updates without waiting
-- [ ] T019 [US2] [depends: T017] Manually run quickstart.md V6: confirm Today/Last 5 Hours increase within 60 seconds of new usage with no user action, and remain unchanged across a tick with no new activity
+- [x] T017 [US2] [depends: T014] In `menubar_app.py`, add a `rumps.Timer` with a 60-second interval (per `research.md` R10) whose callback re-runs `usage_parser.get_summary()` and refreshes the same dropdown items built in T014
+- [x] T018 [US2] [depends: T017] Add a manual "Refresh" menu item above "Quit" in `menubar_app.py` that triggers the same refresh callback as the timer, for on-demand updates without waiting
+- [x] T019 [US2] [depends: T017] Manually run quickstart.md V6: confirm Today/Last 5 Hours increase within 60 seconds of new usage with no user action, and remain unchanged across a tick with no new activity
 
 **Checkpoint**: User Stories 1 and 2 both work — usage is visible and stays current automatically.
 

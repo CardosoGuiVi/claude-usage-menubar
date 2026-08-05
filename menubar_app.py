@@ -62,15 +62,38 @@ class UsageMenuBarApp(rumps.App):
         # rather than adding/removing menu entries, for the same reason
         # `.title` is used instead of `self.menu.clear()` above.
         self._empty_state_item = rumps.MenuItem("No usage data found")
+        # Manual on-demand refresh (US2/T018), invoking the same `_refresh()`
+        # the timer calls. Added to `self.menu` here -- before `run()` later
+        # appends "Quit" to this same `self.menu` object -- so it lands
+        # directly above Quit. A `rumps.separator` visually distinguishes it
+        # from the four data rows above it (a small, low-cost addition; not
+        # explicitly required by the task).
+        self._refresh_item = rumps.MenuItem("Refresh", callback=self._on_refresh_clicked)
         self.menu = [
             self._today_item,
             self._session_item,
             self._rolling_5h_item,
             self._all_time_item,
             self._empty_state_item,
+            rumps.separator,
+            self._refresh_item,
         ]
 
         self._refresh()
+
+        # Per `research.md` R10: a 60 s `rumps.Timer` keeps the dropdown
+        # current without user interaction (US2), on top of the immediate
+        # refresh above so the menu is never empty at launch. `rumps.Timer`
+        # runs on the main run loop (the same one `rumps.App.run()` later
+        # drives via `AppHelper.runEventLoop()`), so this reuses the same
+        # thread-safe `_refresh()` and requires no locking. Unlike the
+        # `@rumps.timer` decorator (which only auto-starts timers registered
+        # on a module-level list when `App.run()` is called), a `Timer`
+        # built directly like this must be started explicitly -- done here,
+        # in `__init__`, rather than in `run()`, so the timer is armed as
+        # soon as the app object exists.
+        self._timer = rumps.Timer(self._on_timer, 60)
+        self._timer.start()
 
     @staticmethod
     def _make_bucket_item(label):
@@ -121,6 +144,20 @@ class UsageMenuBarApp(rumps.App):
         cache_creation_item.title = (
             f"Cache Creation: {usage_parser.format_tokens(totals.cache_creation)}"
         )
+
+    def _on_timer(self, sender):
+        """`rumps.Timer` callback (passed the `Timer` instance itself, per
+        rumps' API): just re-runs `_refresh()` to keep the dropdown current.
+        """
+        self._refresh()
+
+    def _on_refresh_clicked(self, sender):
+        """`rumps.MenuItem` click callback (passed the `MenuItem` instance
+        itself, per rumps' API) for the manual "Refresh" menu item: re-runs
+        the same `_refresh()` the 60 s timer calls, for on-demand updates
+        without waiting (US2/T018).
+        """
+        self._refresh()
 
     def _refresh(self):
         """Recompute usage and update the dropdown's line items in place.
