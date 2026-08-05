@@ -68,7 +68,7 @@ the specific research findings they implement instead.
 
 - [x] T013 [US1] Create `menubar_app.py`: a `rumps.App` subclass with a static menu bar title/icon and a single "Quit" menu item, per `contracts/usage_parser.md` UI-side contract — no data wiring yet
 - [x] T013a [US1] [depends: T013] Configure the `rumps.App` in `menubar_app.py` to run as an accessory app with no Dock icon (set the underlying `NSApplication`'s activation policy to accessory, the equivalent of `LSUIElement`), per FR-002
-- [x] T014 [US1] [depends: T013] In `menubar_app.py`, call `usage_parser.get_summary()` and render its result into the dropdown as four line items — Today, Current Session, Last 5 Hours, All Time — each formatted with `format_tokens()`, per FR-003 and FR-007. Trigger this on app startup so the menu is populated before first click
+- [x] T014 [US1] [depends: T013] In `menubar_app.py`, call `usage_parser.get_summary()` and render its result into the dropdown as four top-level buckets — Today, Current Session, Last 5 Hours, All Time. Per FR-007, each bucket is itself a submenu exposing all five values (input, output, cache read, cache creation, and the combined total), all formatted with `format_tokens()`. Trigger this on app startup so the menu is populated before first click
 - [x] T015 [US1] [depends: T014] In `menubar_app.py`, render an explicit "No usage data found" menu item when `summary.entry_count == 0`, instead of empty/blank rows, per FR-008
 - [x] T016 [US1] [depends: T013a, T014, T015] Manually run quickstart.md scenarios V2 (required breakdowns, no quota %, and no Dock icon/Cmd+Tab entry) and V3 (dropdown's All Time figure matches the deduplicating reference script) against real local data; fix any discrepancy before proceeding
 

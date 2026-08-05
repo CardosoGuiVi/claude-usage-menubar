@@ -59,11 +59,12 @@ pure-core/thin-UI separation has been violated.
 Run the app and click the menu bar icon.
 
 **Expected**: the dropdown lists **Today**, **Current session**, **Last 5
-hours**, and **All time**, each with a token count. No percentage-of-quota and
-no reset countdown appear anywhere — those were removed by the FR-007
-amendment (see `research.md` R3). Additionally, confirm no icon appears in the
-Dock and no entry appears when cycling with Cmd+Tab — the app must behave as a
-menu-bar-only accessory process, per FR-002.
+hours**, and **All time**, each with a token count, and each bucket also
+exposes its input/output/cache-read/cache-creation breakdown via submenu. No
+percentage-of-quota and no reset countdown appear anywhere — those were
+removed by the FR-007 amendment (see `research.md` R3). Additionally, confirm
+no icon appears in the Dock and no entry appears when cycling with Cmd+Tab —
+the app must behave as a menu-bar-only accessory process, per FR-002.
 
 ### V3 — Deduplication is correct (SC-002, research R2)
 
@@ -208,6 +209,14 @@ continuously appends new entries to `~/.claude/projects/` while the checks
 execute — the authoritative V3 comparison above was taken from both sides
 computed within a single process invocation to eliminate that skew.
 
+### Re-validated after FR-007 fix
+
+The V2/T025 results above predate the FR-007 fix. As of the current
+implementation, each bucket (Today / Current session / Last 5 hours /
+All time) exposes a submenu with input, output, cache-read,
+cache-creation, and combined total — not a single flat number. Verified
+against menubar_app.py and tests/test_menubar_app.py.
+
 ---
 
 ## Constitution II Audit (T025)
@@ -237,3 +246,11 @@ No code changes were required by this audit.
 
 `pytest -q` (13 tests, after the FR-007 breakdown fix added tests/test_menubar_app.py) and `ruff check .` both re-confirmed green as part of
 this final task.
+
+### Re-validated after FR-007 fix
+
+The V2/T025 results above predate the FR-007 fix. As of the current
+implementation, each bucket (Today / Current session / Last 5 hours /
+All time) exposes a submenu with input, output, cache-read,
+cache-creation, and combined total — not a single flat number. Verified
+against menubar_app.py and tests/test_menubar_app.py.

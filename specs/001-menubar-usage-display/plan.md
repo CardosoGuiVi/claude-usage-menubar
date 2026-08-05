@@ -109,10 +109,13 @@ dataclasses. Never raises, never caches, never opens a socket.
 
 **`menubar_app.py`** — a `rumps.App` with a static icon, a dropdown listing
 Today / Current session / Last 5 hours / All time, a manual Refresh item, and
-Quit. Calls `get_summary()` once at startup and on each `rumps.Timer` tick.
-Contains no arithmetic beyond delegating to `format_tokens()`. Also owns
-suppressing the Dock icon (accessory activation policy) as part of its setup,
-so the process satisfies FR-002 as a menu-bar-only app.
+Quit. Per FR-007, each of the four bucket items is itself a submenu exposing
+input/output/cache-read/cache-creation alongside the combined total, so the
+full breakdown is present, not just one number per bucket. Calls
+`get_summary()` once at startup and on each `rumps.Timer` tick. Contains no
+arithmetic beyond delegating to `format_tokens()`. Also owns suppressing the
+Dock icon (accessory activation policy) as part of its setup, so the process
+satisfies FR-002 as a menu-bar-only app.
 
 ## Phase 0 — Research (complete)
 
