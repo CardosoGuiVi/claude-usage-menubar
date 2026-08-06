@@ -1,13 +1,19 @@
-"""Unit tests for `usage_percentage.get_usage_percentages()`.
+"""Unit tests for `usage_percentage.get_usage_percentages()` and
+`usage_percentage.format_bar()`.
 
 Per `research.md` R13, this module shells out to the `claude` CLI; these
 tests never invoke a real subprocess -- `subprocess.run` is mocked in every
-test via `unittest.mock.patch`. The four fixture `result` strings below are
-copied verbatim from `research.md` R13 (`FIXTURE_NORMAL`, `FIXTURE_ZERO`,
-`FIXTURE_NEAR_100`, `FIXTURE_MALFORMED`), each wrapped in the same JSON
-envelope shape R13 describes for the real captured `claude -p "/usage"
---output-format json` output (a `"result"` string field alongside cost/turn/
-session metadata), then `json.dumps`'d to stand in for the mocked stdout.
+test via `unittest.mock.patch`. Three of the four fixture `result` strings
+below (`FIXTURE_NORMAL`, `FIXTURE_ZERO`, `FIXTURE_NEAR_100`) are
+hand-constructed from R13's evidenced label/suffix fragments, updated per
+R13's follow-up addendum to use the owner-observed absolute reset
+timestamp phrasing (e.g. "resets 8:10pm") rather than R13's original
+relative-phrasing guess ("resets in 4d 2h"); `FIXTURE_MALFORMED` is the
+verbatim real captured cost-report string, unchanged. Each is wrapped in
+the same JSON envelope shape R13 describes for the real captured `claude
+-p "/usage" --output-format json` output (a `"result"` string field
+alongside cost/turn/session metadata), then `json.dumps`'d to stand in for
+the mocked stdout.
 """
 
 from __future__ import annotations
@@ -16,22 +22,21 @@ import json
 import subprocess
 from unittest import mock
 
-from usage_percentage import UsagePercentages, get_usage_percentages
+from usage_percentage import UsagePercentages, format_bar, get_usage_percentages
 
-# Verbatim from research.md R13.
 FIXTURE_NORMAL = (
-    "Current session               45% used\n"
-    "Current week (all models)     12% used (resets in 4d 2h)"
+    "Current session               45% used   resets 8:10pm\n"
+    "Current week (all models)     12% used   resets Aug 9, 12pm"
 )
 
 FIXTURE_ZERO = (
-    "Current session               0% used   resets in 4h 58m\n"
-    "Current week (all models)     0% used   resets in 6d 23h"
+    "Current session               0% used   resets 8:10pm\n"
+    "Current week (all models)     0% used   resets Aug 9, 12pm"
 )
 
 FIXTURE_NEAR_100 = (
-    "Current session                99% used   resets in 12m\n"
-    "Current week (all models)      100% used   resets in 1d 3h"
+    "Current session                99% used   resets 8:10pm\n"
+    "Current week (all models)      100% used   resets Aug 9, 12pm"
 )
 
 FIXTURE_MALFORMED = (
@@ -82,7 +87,12 @@ class TestGetUsagePercentages:
         ):
             result = get_usage_percentages()
 
-        assert result == UsagePercentages(session_pct=45, week_pct=12)
+        assert result == UsagePercentages(
+            session_pct=45,
+            week_pct=12,
+            session_reset="8:10pm",
+            week_reset="Aug 9, 12pm",
+        )
 
     def test_zero_percent_session_parses_as_zero_not_missing(self) -> None:
         with mock.patch(
@@ -95,6 +105,8 @@ class TestGetUsagePercentages:
         assert result.session_pct is not None
         assert result.week_pct == 0
         assert result.week_pct is not None
+        assert result.session_reset == "8:10pm"
+        assert result.week_reset == "Aug 9, 12pm"
 
     def test_near_100_and_100_parse_correctly(self) -> None:
         with mock.patch(
@@ -102,7 +114,46 @@ class TestGetUsagePercentages:
         ):
             result = get_usage_percentages()
 
-        assert result == UsagePercentages(session_pct=99, week_pct=100)
+        assert result == UsagePercentages(
+            session_pct=99,
+            week_pct=100,
+            session_reset="8:10pm",
+            week_reset="Aug 9, 12pm",
+        )
+
+    def test_reset_text_absent_for_one_side_still_parses_the_other(self) -> None:
+        """A percentage line with no reset phrase at all must not fail the
+        whole parse -- the reset field for that side stays `None`, and the
+        other side's percentage/reset are unaffected.
+        """
+        fixture = (
+            "Current session               45% used\n"
+            "Current week (all models)     12% used   resets Aug 9, 12pm"
+        )
+        with mock.patch("subprocess.run", return_value=_completed(_envelope(fixture))):
+            result = get_usage_percentages()
+
+        assert result == UsagePercentages(
+            session_pct=45,
+            week_pct=12,
+            session_reset=None,
+            week_reset="Aug 9, 12pm",
+        )
+
+    def test_reset_text_absent_for_both_sides_still_parses_percentages(self) -> None:
+        fixture = (
+            "Current session               45% used\n"
+            "Current week (all models)     12% used"
+        )
+        with mock.patch("subprocess.run", return_value=_completed(_envelope(fixture))):
+            result = get_usage_percentages()
+
+        assert result == UsagePercentages(
+            session_pct=45,
+            week_pct=12,
+            session_reset=None,
+            week_reset=None,
+        )
 
     def test_malformed_cost_report_yields_both_none(self) -> None:
         with mock.patch(
@@ -200,4 +251,34 @@ class TestGetUsagePercentages:
         ):
             result = get_usage_percentages()
 
-        assert result == UsagePercentages(session_pct=45, week_pct=12)
+        assert result == UsagePercentages(
+            session_pct=45,
+            week_pct=12,
+            session_reset="8:10pm",
+            week_reset="Aug 9, 12pm",
+        )
+
+
+class TestFormatBar:
+    def test_zero_percent_is_all_empty(self) -> None:
+        assert format_bar(0) == "░" * 10
+
+    def test_24_percent_rounds_to_two_filled(self) -> None:
+        # 24 / 100 * 10 = 2.4 -> round-half-up -> 2 filled.
+        assert format_bar(24) == "▓" * 2 + "░" * 8
+
+    def test_45_percent_rounds_up_to_five_filled(self) -> None:
+        # 45 / 100 * 10 = 4.5 -> round-half-up (not banker's rounding) -> 5.
+        assert format_bar(45) == "▓" * 5 + "░" * 5
+
+    def test_100_percent_is_all_filled(self) -> None:
+        assert format_bar(100) == "▓" * 10
+
+    def test_none_is_all_empty(self) -> None:
+        assert format_bar(None) == "░" * 10
+
+    def test_negative_pct_is_clamped_to_all_empty(self) -> None:
+        assert format_bar(-10) == "░" * 10
+
+    def test_over_100_pct_is_clamped_to_all_filled(self) -> None:
+        assert format_bar(150) == "▓" * 10

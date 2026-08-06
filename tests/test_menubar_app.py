@@ -21,12 +21,13 @@ from __future__ import annotations
 from unittest import mock
 
 import pytest
+from rumps.rumps import SeparatorMenuItem
 
 import menubar_app
 import usage_parser
 import usage_percentage
 from usage_parser import TokenTotals, UsageSummary
-from usage_percentage import UsagePercentages
+from usage_percentage import UsagePercentages, format_bar
 
 
 def _make_summary() -> UsageSummary:
@@ -71,6 +72,36 @@ def app():
         ),
     ):
         yield menubar_app.UsageMenuBarApp()
+
+
+def test_menu_order_session_week_then_buckets_then_refresh(app):
+    """FR-013 follow-up: Session/Week must lead the dropdown, separated
+    from the four FR-007 buckets (plus the FR-008 empty-state item) by a
+    separator, which is itself separated from Refresh -- Quit is appended
+    later by `rumps.App.run()`, so it is not part of this app-side list.
+    """
+    items = list(app.menu.values())
+
+    assert items[0] is app._session_pct_item
+    assert items[1] is app._week_pct_item
+    assert isinstance(items[2], SeparatorMenuItem)
+    assert items[3] is app._today_item
+    assert items[4] is app._session_item
+    assert items[5] is app._rolling_5h_item
+    assert items[6] is app._all_time_item
+    assert items[7] is app._empty_state_item
+    assert isinstance(items[8], SeparatorMenuItem)
+    assert items[9] is app._refresh_item
+
+
+def test_session_and_week_items_are_not_disabled(app):
+    """These two items must render enabled/normal-colored, not
+    greyed-out -- a `MenuItem` created with no `callback` renders
+    disabled in Cocoa (`setAction_(None)`), so both must have a callback
+    (even a no-op one) set at construction time.
+    """
+    assert app._session_pct_item.callback is not None
+    assert app._week_pct_item.callback is not None
 
 
 def test_all_four_buckets_expose_five_numbers_each(app):
@@ -181,7 +212,34 @@ def test_empty_state_then_real_data_restores_buckets(app):
 class TestUsagePercentages:
     """FR-013: session/week usage percentages from `usage_percentage`."""
 
-    def test_both_percentages_present(self, app):
+    def test_both_percentages_present_with_resets(self, app):
+        with mock.patch.object(
+            usage_percentage,
+            "get_usage_percentages",
+            return_value=UsagePercentages(
+                session_pct=45,
+                week_pct=12,
+                session_reset="8:10pm",
+                week_reset="Aug 9, 12pm",
+            ),
+        ):
+            app._refresh()
+
+        assert app._session_pct_item.title == (
+            f"Session: {format_bar(45)} 45%   (Resets 8:10pm)"
+        )
+        assert not app._session_pct_item.hidden
+        assert app._week_pct_item.title == (
+            f"Week:    {format_bar(12)} 12%   (Resets Aug 9, 12pm)"
+        )
+        assert not app._week_pct_item.hidden
+        assert app.title == "45% · 12%"
+
+    def test_both_percentages_present_without_resets(self, app):
+        """A percentage with no reset text (e.g. the CLI didn't report
+        one) must render without a "(Resets ...)" clause at all, not a
+        clause with an empty/placeholder value.
+        """
         with mock.patch.object(
             usage_percentage,
             "get_usage_percentages",
@@ -189,10 +247,8 @@ class TestUsagePercentages:
         ):
             app._refresh()
 
-        assert app._session_pct_item.title == "Session Usage: 45% used"
-        assert not app._session_pct_item.hidden
-        assert app._week_pct_item.title == "Week Usage: 12% used"
-        assert not app._week_pct_item.hidden
+        assert app._session_pct_item.title == f"Session: {format_bar(45)} 45%"
+        assert app._week_pct_item.title == f"Week:    {format_bar(12)} 12%"
 
     def test_only_session_present_week_hidden(self, app):
         with mock.patch.object(
@@ -203,9 +259,12 @@ class TestUsagePercentages:
             app._refresh()
 
         # 0% must still show (falsy-but-not-missing), not be hidden.
-        assert app._session_pct_item.title == "Session Usage: 0% used"
+        assert app._session_pct_item.title == f"Session: {format_bar(0)} 0%"
         assert not app._session_pct_item.hidden
         assert app._week_pct_item.hidden
+        # Partial availability: keep the two-part shape, em dash for the
+        # missing side, so it's unambiguous which slot is which.
+        assert app.title == "0% · –"
 
     def test_only_week_present_session_hidden(self, app):
         with mock.patch.object(
@@ -216,8 +275,9 @@ class TestUsagePercentages:
             app._refresh()
 
         assert app._session_pct_item.hidden
-        assert app._week_pct_item.title == "Week Usage: 99% used"
+        assert app._week_pct_item.title == f"Week:    {format_bar(99)} 99%"
         assert not app._week_pct_item.hidden
+        assert app.title == "– · 99%"
 
     def test_both_none_hides_both_items(self, app):
         with mock.patch.object(
@@ -229,6 +289,9 @@ class TestUsagePercentages:
 
         assert app._session_pct_item.hidden
         assert app._week_pct_item.hidden
+        # Both missing: fall back to icon-only, no title text at all --
+        # not an empty string and not a two-dash placeholder.
+        assert app.title is None
 
     def test_percentages_update_independently_of_empty_log_data(self, app):
         """FR-013's percentages must not be skipped by FR-008's early return
@@ -252,7 +315,8 @@ class TestUsagePercentages:
         assert app._today_item.hidden
         assert not app._empty_state_item.hidden
         # ...but the percentage items are unaffected by it.
-        assert app._session_pct_item.title == "Session Usage: 7% used"
+        assert app._session_pct_item.title == f"Session: {format_bar(7)} 7%"
         assert not app._session_pct_item.hidden
-        assert app._week_pct_item.title == "Week Usage: 3% used"
+        assert app._week_pct_item.title == f"Week:    {format_bar(3)} 3%"
         assert not app._week_pct_item.hidden
+        assert app.title == "7% · 3%"

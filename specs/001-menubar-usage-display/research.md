@@ -453,3 +453,21 @@ constitutionally distinct, post-amendment) trust boundary.
   evidence shows at least two differently-clustered renderings of the same
   labels in the binary, so a rigid format assumption is more likely to
   silently stop matching after a CLI update than a permissive one.
+
+**Follow-up addendum (reset-time phrasing corrected)**: the original
+`FIXTURE_NORMAL`/`FIXTURE_ZERO`/`FIXTURE_NEAR_100` fixtures above guessed a
+relative "resets in Xd Yh" phrasing for the reset time, explicitly flagged
+at the time as inferred/guessed rather than confirmed live (this account's
+API-key billing never populates real percentage/reset text at all — see
+"Findings" above). The project owner has since observed, on their own
+real `/usage` output, that the reset is instead reported as an **absolute**
+clock time/date next to each percentage (e.g. `resets 8:10pm` for a
+same-day reset, `resets Aug 9, 12pm` for a later one), not the relative
+phrasing this entry originally guessed. The fixtures and the parsing
+regexes (`SESSION_RESET_RE`/`WEEK_RESET_RE`) were updated accordingly to
+capture this absolute-time text verbatim (no `resets`/`at` prefix, no
+surrounding parens). This correction is based on first-hand owner
+observation of their own live output, not a fresh `strings`/subprocess
+capture in this research environment — the same account-type limitation
+noted throughout this entry still applies to any further independent
+verification here.
