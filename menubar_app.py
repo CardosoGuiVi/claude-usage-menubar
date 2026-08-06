@@ -4,29 +4,36 @@ Per `specs/001-menubar-usage-display/contracts/usage_parser.md`'s "UI-side
 contract", this module performs no parsing, bucketing, or arithmetic on
 usage data itself -- it only reads fields off `UsageSummary` (and the
 `TokenTotals` it carries, via `.input`/`.output`/`.cache_read`/
-`.cache_creation`/`.total`) and formats them via `usage_parser.format_tokens`.
+`.cache_creation`/`.total`) and formats them via `usage_parser.format_tokens`,
+and reads fields off `UsagePercentages` and formats them via
+`usage_percentage.format_bar` and plain string interpolation.
 
-The dropdown is populated at startup with four top-level line items (Today,
-Current Session, Last 5 Hours, All Time), each showing that bucket's
-combined-total token count. Per FR-007, the dropdown must also expose the
-raw input/output/cache-read/cache-creation breakdown per bucket, not just
-the combined total -- each of the four items is therefore also a submenu
-(rumps' `MenuItem` doubles as a submenu container) holding four further
-line items with that breakdown, so all five numbers per bucket (total,
-input, output, cache read, cache creation) are present in the menu
-structure. Per FR-008, when there is no local usage data at all
+Per FR-013, the dropdown's TOP two items -- Session and Week -- are sourced
+from `usage_percentage.get_usage_percentages()` rather than the local
+session logs, each rendered as a block-character progress bar
+(`usage_percentage.format_bar()`) alongside its percentage and, when
+available, its reset time (e.g. `Session: ▓▓░░░░░░░░ 24%   (Resets
+8:10pm)`). These are a best-effort enhancement (Constitution Principle VI)
+entirely independent of FR-008's empty-log-data state below: they are
+updated on every `_refresh()` call regardless of whether
+`summary.entry_count == 0`, and each is hidden individually when its own
+percentage field is `None` (e.g. it's valid for one to show while the
+other stays hidden). The current status bar title (visible without
+clicking the dropdown, per `self.title`) also mirrors both percentages at
+a glance, e.g. `24% · 45%`; see `_update_percentages()`.
+
+Below a separator, the dropdown continues with four top-level line items
+(Today, Current Session, Last 5 Hours, All Time), each showing that
+bucket's combined-total token count. Per FR-007, the dropdown must also
+expose the raw input/output/cache-read/cache-creation breakdown per
+bucket, not just the combined total -- each of the four items is therefore
+also a submenu (rumps' `MenuItem` doubles as a submenu container) holding
+four further line items with that breakdown, so all five numbers per
+bucket (total, input, output, cache read, cache creation) are present in
+the menu structure. Per FR-008, when there is no local usage data at all
 (`summary.entry_count == 0`), the four top-level items (and, with them,
 their submenus) are hidden and replaced with a single explicit "No usage
 data found" item instead of showing four all-zero rows.
-
-Per FR-013, the dropdown also exposes two further stable top-level items --
-Session Usage and Week Usage -- sourced from `usage_percentage.
-get_usage_percentages()` rather than the local session logs. These are a
-best-effort enhancement (Constitution Principle VI) entirely independent of
-FR-008's empty-log-data state: they are updated on every `_refresh()` call
-regardless of whether `summary.entry_count == 0`, and each is hidden
-individually when its own field is `None` (e.g. it's valid for one to show
-while the other stays hidden).
 """
 
 import AppKit
@@ -50,6 +57,21 @@ class UsageMenuBarApp(rumps.App):
         # never call `self.menu.clear()` (which would also wipe out Quit) --
         # it only ever mutates `.title`/`.hidden` on these existing items.
         #
+        # Per FR-013: two stable top-level items -- Session and Week --
+        # sourced from `usage_percentage.get_usage_percentages()` rather
+        # than the local session logs (see the module docstring above).
+        # Each is toggled independently via `.hidden`/`.show()`/`.hide()`
+        # in `_refresh()`, the same stable-item-created-once pattern used
+        # for the four bucket items below. A `MenuItem` created with no
+        # `callback` renders disabled/grey in Cocoa (confirmed via rumps'
+        # `MenuItem.set_callback()`, which calls `setAction_(None)` in that
+        # case); these two are purely informational, not disabled, so each
+        # gets a harmless no-op callback to render enabled/normal-colored
+        # while still doing nothing on click.
+        self._session_pct_item = rumps.MenuItem(
+            "Session", callback=lambda _sender: None
+        )
+        self._week_pct_item = rumps.MenuItem("Week", callback=lambda _sender: None)
         # `_make_bucket_item()` builds one top-level bucket MenuItem plus its
         # four breakdown children (Input, Output, Cache Read, Cache
         # Creation), added to the parent's own submenu exactly once here --
@@ -67,14 +89,6 @@ class UsageMenuBarApp(rumps.App):
         self._all_time_item, self._all_time_children = self._make_bucket_item(
             "All Time"
         )
-        # Per FR-013: two further stable top-level items, sourced from
-        # `usage_percentage.get_usage_percentages()` rather than the local
-        # session logs (see the module docstring above). Each is toggled
-        # independently via `.hidden`/`.show()`/`.hide()` in `_refresh()`,
-        # the same stable-item-created-once pattern used for the four
-        # bucket items above.
-        self._session_pct_item = rumps.MenuItem("Session Usage")
-        self._week_pct_item = rumps.MenuItem("Week Usage")
         # Per FR-008: shown instead of the four data items (which are
         # hidden, not removed -- see `_refresh()`) when there is no local
         # usage data at all. Kept as a stable item alongside the four data
@@ -91,14 +105,20 @@ class UsageMenuBarApp(rumps.App):
         self._refresh_item = rumps.MenuItem(
             "Refresh", callback=self._on_refresh_clicked
         )
+        # Target order (per the FR-013 follow-up task): Session/Week at the
+        # top (the FR-013 percentage rows), then a separator, then the four
+        # FR-007 token-total buckets plus the FR-008 empty-state item, then
+        # a second separator, then Refresh (Quit is appended later by
+        # `rumps.App.run()`).
         self.menu = [
+            self._session_pct_item,
+            self._week_pct_item,
+            rumps.separator,
             self._today_item,
             self._session_item,
             self._rolling_5h_item,
             self._all_time_item,
             self._empty_state_item,
-            self._session_pct_item,
-            self._week_pct_item,
             rumps.separator,
             self._refresh_item,
         ]
@@ -169,29 +189,61 @@ class UsageMenuBarApp(rumps.App):
             f"Cache Creation: {usage_parser.format_tokens(totals.cache_creation)}"
         )
 
-    def _update_percentages(self, percentages):
-        """Update the two FR-013 percentage items from a
-        `usage_percentage.UsagePercentages`.
+    # Both labels padded to the same width so the bars that follow them
+    # start in the same column (see the target menu layout in the module
+    # docstring) -- "Session:" (8 chars) plus one space is 9 chars, so
+    # "Week:" (5 chars) needs 4 trailing spaces to match.
+    _SESSION_LABEL = f"{'Session:':<9}"
+    _WEEK_LABEL = f"{'Week:':<9}"
 
-        Reads only its two fields (`.session_pct`/`.week_pct`) and formats
-        each into a title -- no parsing or arithmetic happens here, per the
-        UI-side contract. Each item is shown/hidden independently of the
-        other: a `None` field hides that item, an `int` field (including
-        `0`) shows it with the formatted percentage.
+    def _update_percentages(self, percentages):
+        """Update the two FR-013 percentage items and the status bar title
+        from a `usage_percentage.UsagePercentages`.
+
+        Reads only its four fields (`.session_pct`/`.week_pct`/
+        `.session_reset`/`.week_reset`) and formats each into a title via
+        plain string interpolation plus `usage_percentage.format_bar()` --
+        no parsing or arithmetic happens here, per the UI-side contract;
+        the bar rendering itself lives in the pure core. Each dropdown item
+        is shown/hidden independently of the other: a `None` percentage
+        hides that item, an `int` percentage (including `0`) shows it with
+        a block-character bar, the percentage, and -- only when the CLI
+        reported one -- a trailing `(Resets ...)` clause. Also sets
+        `self.title` (the text next to the menu bar icon, visible without
+        opening the dropdown) to both percentages at a glance, e.g.
+        `24% · 45%`; falls back to `None` (icon-only, no title text) only
+        when both percentages are unavailable, and uses an em dash "–" as
+        a placeholder for whichever single side is missing so the
+        session/week slots stay unambiguous.
         """
         if percentages.session_pct is None:
             self._session_pct_item.hide()
+            session_title_part = "–"
         else:
-            self._session_pct_item.title = (
-                f"Session Usage: {percentages.session_pct}% used"
-            )
+            bar = usage_percentage.format_bar(percentages.session_pct)
+            title = f"{self._SESSION_LABEL}{bar} {percentages.session_pct}%"
+            if percentages.session_reset:
+                title += f"   (Resets {percentages.session_reset})"
+            self._session_pct_item.title = title
             self._session_pct_item.show()
+            session_title_part = f"{percentages.session_pct}%"
 
         if percentages.week_pct is None:
             self._week_pct_item.hide()
+            week_title_part = "–"
         else:
-            self._week_pct_item.title = f"Week Usage: {percentages.week_pct}% used"
+            bar = usage_percentage.format_bar(percentages.week_pct)
+            title = f"{self._WEEK_LABEL}{bar} {percentages.week_pct}%"
+            if percentages.week_reset:
+                title += f"   (Resets {percentages.week_reset})"
+            self._week_pct_item.title = title
             self._week_pct_item.show()
+            week_title_part = f"{percentages.week_pct}%"
+
+        if percentages.session_pct is None and percentages.week_pct is None:
+            self.title = None
+        else:
+            self.title = f"{session_title_part} · {week_title_part}"
 
     def _on_timer(self, sender):
         """`rumps.Timer` callback (passed the `Timer` instance itself, per
@@ -237,12 +289,12 @@ class UsageMenuBarApp(rumps.App):
         `run()`.
 
         Per FR-013: also calls `usage_percentage.get_usage_percentages()`
-        and updates `_session_pct_item`/`_week_pct_item` via
-        `_update_percentages()`, unconditionally and before the
-        FR-008 empty-log-data early return below -- the percentage figures
-        come from the `claude` CLI, not the local session logs, so they
-        must stay entirely independent of whether any local usage data
-        exists.
+        and updates `_session_pct_item`/`_week_pct_item` (and, via the same
+        `_update_percentages()` call, the status bar's `self.title` text
+        next to the icon) unconditionally and before the FR-008
+        empty-log-data early return below -- the percentage figures come
+        from the `claude` CLI, not the local session logs, so they must
+        stay entirely independent of whether any local usage data exists.
         """
         self._update_percentages(usage_percentage.get_usage_percentages())
 
