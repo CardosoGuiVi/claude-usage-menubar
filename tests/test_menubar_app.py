@@ -24,7 +24,9 @@ import pytest
 
 import menubar_app
 import usage_parser
+import usage_percentage
 from usage_parser import TokenTotals, UsageSummary
+from usage_percentage import UsagePercentages
 
 
 def _make_summary() -> UsageSummary:
@@ -55,10 +57,19 @@ def app():
     same function object `menubar_app` calls, per the module-level `import
     usage_parser` + `usage_parser.get_summary()` call convention already
     used throughout `menubar_app.py`) so no real local session log data is
-    read. `UsageMenuBarApp.__init__` calls `_refresh()` once already, so
-    the returned app is immediately populated from `_make_summary()`.
+    read. Also patches `usage_percentage.get_usage_percentages` (same
+    `mock.patch.object(...)` style) so no real `claude` subprocess is
+    invoked, defaulting to an empty `UsagePercentages()` -- individual
+    FR-013 tests below override this via a nested `mock.patch.object` call.
+    `UsageMenuBarApp.__init__` calls `_refresh()` once already, so the
+    returned app is immediately populated from `_make_summary()`.
     """
-    with mock.patch.object(usage_parser, "get_summary", return_value=_make_summary()):
+    with (
+        mock.patch.object(usage_parser, "get_summary", return_value=_make_summary()),
+        mock.patch.object(
+            usage_percentage, "get_usage_percentages", return_value=UsagePercentages()
+        ),
+    ):
         yield menubar_app.UsageMenuBarApp()
 
 
@@ -165,3 +176,83 @@ def test_empty_state_then_real_data_restores_buckets(app):
     assert app._empty_state_item.hidden
     assert app._today_item.title == "Today: 10"
     assert len(list(app._today_item.values())) == 4
+
+
+class TestUsagePercentages:
+    """FR-013: session/week usage percentages from `usage_percentage`."""
+
+    def test_both_percentages_present(self, app):
+        with mock.patch.object(
+            usage_percentage,
+            "get_usage_percentages",
+            return_value=UsagePercentages(session_pct=45, week_pct=12),
+        ):
+            app._refresh()
+
+        assert app._session_pct_item.title == "Session Usage: 45% used"
+        assert not app._session_pct_item.hidden
+        assert app._week_pct_item.title == "Week Usage: 12% used"
+        assert not app._week_pct_item.hidden
+
+    def test_only_session_present_week_hidden(self, app):
+        with mock.patch.object(
+            usage_percentage,
+            "get_usage_percentages",
+            return_value=UsagePercentages(session_pct=0, week_pct=None),
+        ):
+            app._refresh()
+
+        # 0% must still show (falsy-but-not-missing), not be hidden.
+        assert app._session_pct_item.title == "Session Usage: 0% used"
+        assert not app._session_pct_item.hidden
+        assert app._week_pct_item.hidden
+
+    def test_only_week_present_session_hidden(self, app):
+        with mock.patch.object(
+            usage_percentage,
+            "get_usage_percentages",
+            return_value=UsagePercentages(session_pct=None, week_pct=99),
+        ):
+            app._refresh()
+
+        assert app._session_pct_item.hidden
+        assert app._week_pct_item.title == "Week Usage: 99% used"
+        assert not app._week_pct_item.hidden
+
+    def test_both_none_hides_both_items(self, app):
+        with mock.patch.object(
+            usage_percentage,
+            "get_usage_percentages",
+            return_value=UsagePercentages(session_pct=None, week_pct=None),
+        ):
+            app._refresh()
+
+        assert app._session_pct_item.hidden
+        assert app._week_pct_item.hidden
+
+    def test_percentages_update_independently_of_empty_log_data(self, app):
+        """FR-013's percentages must not be skipped by FR-008's early return
+        for `summary.entry_count == 0` -- they come from the `claude` CLI,
+        not local session logs, so they update even when local usage data
+        is entirely absent.
+        """
+        with (
+            mock.patch.object(
+                usage_parser, "get_summary", return_value=UsageSummary(entry_count=0)
+            ),
+            mock.patch.object(
+                usage_percentage,
+                "get_usage_percentages",
+                return_value=UsagePercentages(session_pct=7, week_pct=3),
+            ),
+        ):
+            app._refresh()
+
+        # FR-008 empty-log-data state still applies to the bucket items...
+        assert app._today_item.hidden
+        assert not app._empty_state_item.hidden
+        # ...but the percentage items are unaffected by it.
+        assert app._session_pct_item.title == "Session Usage: 7% used"
+        assert not app._session_pct_item.hidden
+        assert app._week_pct_item.title == "Week Usage: 3% used"
+        assert not app._week_pct_item.hidden

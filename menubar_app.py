@@ -18,19 +18,31 @@ structure. Per FR-008, when there is no local usage data at all
 (`summary.entry_count == 0`), the four top-level items (and, with them,
 their submenus) are hidden and replaced with a single explicit "No usage
 data found" item instead of showing four all-zero rows.
+
+Per FR-013, the dropdown also exposes two further stable top-level items --
+Session Usage and Week Usage -- sourced from `usage_percentage.
+get_usage_percentages()` rather than the local session logs. These are a
+best-effort enhancement (Constitution Principle VI) entirely independent of
+FR-008's empty-log-data state: they are updated on every `_refresh()` call
+regardless of whether `summary.entry_count == 0`, and each is hidden
+individually when its own field is `None` (e.g. it's valid for one to show
+while the other stays hidden).
 """
 
 import AppKit
 import rumps
 
 import usage_parser
+import usage_percentage
 
 
 class UsageMenuBarApp(rumps.App):
     """Menu bar app shell for displaying Claude Code usage."""
 
     def __init__(self):
-        super().__init__(name="Claude Usage", icon="icon.png", template=True, quit_button="Quit")
+        super().__init__(
+            name="Claude Usage", icon="icon.png", template=True, quit_button="Quit"
+        )
 
         # Created once with stable identities and added to self.menu exactly
         # once. `rumps.App.run()` appends a "Quit" MenuItem to this same
@@ -55,6 +67,14 @@ class UsageMenuBarApp(rumps.App):
         self._all_time_item, self._all_time_children = self._make_bucket_item(
             "All Time"
         )
+        # Per FR-013: two further stable top-level items, sourced from
+        # `usage_percentage.get_usage_percentages()` rather than the local
+        # session logs (see the module docstring above). Each is toggled
+        # independently via `.hidden`/`.show()`/`.hide()` in `_refresh()`,
+        # the same stable-item-created-once pattern used for the four
+        # bucket items above.
+        self._session_pct_item = rumps.MenuItem("Session Usage")
+        self._week_pct_item = rumps.MenuItem("Week Usage")
         # Per FR-008: shown instead of the four data items (which are
         # hidden, not removed -- see `_refresh()`) when there is no local
         # usage data at all. Kept as a stable item alongside the four data
@@ -68,13 +88,17 @@ class UsageMenuBarApp(rumps.App):
         # directly above Quit. A `rumps.separator` visually distinguishes it
         # from the four data rows above it (a small, low-cost addition; not
         # explicitly required by the task).
-        self._refresh_item = rumps.MenuItem("Refresh", callback=self._on_refresh_clicked)
+        self._refresh_item = rumps.MenuItem(
+            "Refresh", callback=self._on_refresh_clicked
+        )
         self.menu = [
             self._today_item,
             self._session_item,
             self._rolling_5h_item,
             self._all_time_item,
             self._empty_state_item,
+            self._session_pct_item,
+            self._week_pct_item,
             rumps.separator,
             self._refresh_item,
         ]
@@ -145,6 +169,30 @@ class UsageMenuBarApp(rumps.App):
             f"Cache Creation: {usage_parser.format_tokens(totals.cache_creation)}"
         )
 
+    def _update_percentages(self, percentages):
+        """Update the two FR-013 percentage items from a
+        `usage_percentage.UsagePercentages`.
+
+        Reads only its two fields (`.session_pct`/`.week_pct`) and formats
+        each into a title -- no parsing or arithmetic happens here, per the
+        UI-side contract. Each item is shown/hidden independently of the
+        other: a `None` field hides that item, an `int` field (including
+        `0`) shows it with the formatted percentage.
+        """
+        if percentages.session_pct is None:
+            self._session_pct_item.hide()
+        else:
+            self._session_pct_item.title = (
+                f"Session Usage: {percentages.session_pct}% used"
+            )
+            self._session_pct_item.show()
+
+        if percentages.week_pct is None:
+            self._week_pct_item.hide()
+        else:
+            self._week_pct_item.title = f"Week Usage: {percentages.week_pct}% used"
+            self._week_pct_item.show()
+
     def _on_timer(self, sender):
         """`rumps.Timer` callback (passed the `Timer` instance itself, per
         rumps' API): just re-runs `_refresh()` to keep the dropdown current.
@@ -187,7 +235,17 @@ class UsageMenuBarApp(rumps.App):
         `__init__`) so a periodic timer can call it again to keep the
         dropdown current -- safely, any number of times, before or after
         `run()`.
+
+        Per FR-013: also calls `usage_percentage.get_usage_percentages()`
+        and updates `_session_pct_item`/`_week_pct_item` via
+        `_update_percentages()`, unconditionally and before the
+        FR-008 empty-log-data early return below -- the percentage figures
+        come from the `claude` CLI, not the local session logs, so they
+        must stay entirely independent of whether any local usage data
+        exists.
         """
+        self._update_percentages(usage_percentage.get_usage_percentages())
+
         summary = usage_parser.get_summary()
 
         if summary.entry_count == 0:

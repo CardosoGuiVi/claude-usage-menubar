@@ -293,3 +293,163 @@ own known plan limit manually.
   and email), not a "local session log," and the app would just be
   re-displaying someone else's server-computed figure of unknown freshness,
   not computing anything itself.
+
+---
+
+## R13: session/week usage percentages via `claude -p "/usage"` subprocess
+
+**Decision**: Reopen R3/R12 for a narrow case they did not evaluate: add an
+optional, best-effort enhancement (FR-013) that shells out to `claude -p
+"/usage" --output-format json` and regex-parses the `result` string for
+"Current session" and "Current week (all models)" percentages. Treat any
+parse failure — including the binary being absent — as "no percentage
+available." Never crash, and never block the core FR-007 token-count
+display, per Constitution Principle VI.
+
+**Findings**: `claude -p "/usage" --output-format json` is a genuine local,
+zero-cost meta-command, not a network call in the sense R3/FR-004
+prohibit: three repeated runs a few seconds apart all returned
+`duration_api_ms:0`, `num_turns:0`, `total_cost_usd:0`, and byte-identical
+`result` text (only `session_id`/`uuid`/`duration_ms` varied). It writes a
+one-line auth-source warning to **stderr** (not stdout) that must not be
+merged into the parsed value:
+```
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+```
+
+In the account used for this research (API-key/Console billing, not an
+OAuth Pro/Max/Team subscription) the `result` string is always a generic
+cost report, never a percentage:
+```
+Total cost:            $0.0000
+Total duration (API):  0s
+Total duration (wall): 0s
+Total code changes:    0 lines added, 0 lines removed
+Usage:                 0 input, 0 output, 0 cache read, 0 cache write
+```
+This matches R12: rate-limit/percentage-of-quota data is only populated for
+OAuth subscription accounts. `claude -p "/usage-credits" --output-format
+json` similarly returns a zero-cost meta-response ("`/usage-credits isn't
+available in this environment.`"); `claude --help` exposes no dedicated
+`usage` subcommand or alternate output flag — the only way to get this text
+is the `/usage` slash command via `-p`.
+
+`strings -a` on the installed binary
+(`/opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe`,
+v2.1.223) confirms — as literal static string fragments, not a captured
+live render — that the labels `Current session`, `Current week (all
+models)`, `Current week (Sonnet only)` are immediately followed in the
+bundle by the fragments `" resets "` and `"% used"`, clustered with the
+internal rate-limit-window keys `five_hour` / `seven_day` /
+`seven_day_sonnet`. No box-drawing characters (`─│┃╭╮`) exist anywhere in
+the binary, and no printf-style percentage placeholder (`%d%%`, `{}%`) was
+found tied to this feature — the dynamic numbers are JS template-literal
+interpolations invisible to `strings`, so the exact whitespace, separator,
+and ordering of the real rendered line could not be confirmed, only
+inferred. A separate, unrelated cluster (`"You've used "` / `"% of your "`
+/ `" resets "`) is an org/team spend-cap warning banner, not the
+session/week summary — a regex must stay anchored to the specific label
+text to avoid false-matching it. A third cluster contains
+`rate_limit_fill`/`rate_limit_empty` tokens suggesting a progress-bar
+widget elsewhere in the product, not necessarily this text output.
+
+A structured alternative was discovered but is out of scope for this
+subprocess approach: the binary embeds documentation for a `statusLine`
+hook JSON schema that includes a fully structured, numeric
+`rate_limits.five_hour.used_percentage` / `rate_limits.seven_day
+.used_percentage` (0–100) with `resets_at` (Unix epoch seconds), explicitly
+noted as "Only present for subscribers after first API response" — which
+reconfirms R12's finding for the reason percentages are absent here. This
+would be far more reliable than text-scraping, but it is only delivered to
+a `statusLine` command configured in `settings.json` and invoked by Claude
+Code during a live interactive session — it cannot be obtained via a
+standalone `claude -p` call, so it does not fit this app's on-demand
+subprocess-polling model. Noted for a future revisit, not adopted here.
+
+For the missing-binary case, Python's `subprocess.run([...], check=True)`
+raises `FileNotFoundError` when `claude` is not on `PATH` (confirmed by
+direct test with a nonexistent binary name) — distinct from
+`subprocess.CalledProcessError` (nonzero exit) and
+`subprocess.TimeoutExpired` (hang); all three must be caught separately and
+must degrade to "no percentage" rather than crash the menu bar app. `claude
+--version` reports `2.1.223 (Claude Code)`, installed at
+`/opt/homebrew/bin/claude` via Homebrew — a standard PATH-visible location
+for anyone with Claude Code set up, so shelling out is reasonable as an
+optional enhancement, not a hard dependency.
+
+**Proposed regexes** (permissive, whitespace/punctuation-tolerant; tested
+against hand-built synthetic variants and the real captured cost-report
+string):
+```python
+SESSION_PCT_RE = re.compile(r"Current session[^\d%]{0,40}(\d{1,3})\s*%\s*used", re.IGNORECASE)
+WEEK_PCT_RE = re.compile(r"Current week \(all models\)[^\d%]{0,40}(\d{1,3})\s*%\s*used", re.IGNORECASE)
+```
+Both matched correctly across every synthetic layout tried (padded columns,
+colon-separated, no space before `%`, `0%`, `99%`, `100%`) and both
+returned `None` (no exception) on the real malformed/cost-report sample —
+confirming the parser fails safe rather than mis-parsing garbage. The
+`[^\d%]{0,40}` gap and the exact label text are the only speculative parts;
+everything else (label strings, `% used` suffix) is directly evidenced.
+
+**Fixture strings for unit tests** (values for the `result` field):
+```python
+FIXTURE_NORMAL = (
+    "Current session               45% used\n"
+    "Current week (all models)     12% used (resets in 4d 2h)"
+)
+
+FIXTURE_ZERO = (
+    "Current session               0% used   resets in 4h 58m\n"
+    "Current week (all models)     0% used   resets in 6d 23h"
+)
+
+FIXTURE_NEAR_100 = (
+    "Current session                99% used   resets in 12m\n"
+    "Current week (all models)      100% used   resets in 1d 3h"
+)
+
+FIXTURE_MALFORMED = (
+    "Total cost:            $0.0000\n"
+    "Total duration (API):  0s\n"
+    "Total duration (wall): 0s\n"
+    "Total code changes:    0 lines added, 0 lines removed\n"
+    "Usage:                 0 input, 0 output, 0 cache read, 0 cache write"
+)
+```
+`FIXTURE_MALFORMED` is the verbatim real `result` string captured from an
+API-key-billing environment — a genuine, observed unexpected-format
+sample, not a hypothetical one. `FIXTURE_NORMAL`, `FIXTURE_ZERO`, and
+`FIXTURE_NEAR_100` are hand-constructed from the evidenced label/suffix
+fragments and are **not** captured live renders; their exact
+spacing/reset-time phrasing is a best-effort guess, not a format guarantee
+— which is exactly why Constitution Principle VI requires the graceful
+fallback path this regex's `None`-on-no-match behavior provides.
+
+**Rationale**: The percentage feature can only ever be a best-effort,
+optional enhancement layered on top of R1–R11's raw-token-count display: it
+depends on (a) the user having `claude` installed and on `PATH`, (b) the
+user being on an OAuth Pro/Max/Team subscription rather than
+API-key/Console billing (per R3/R12), and (c) a text format that is not
+contractually stable (confirmed unrecoverable byte-exact from the binary).
+A permissive regex with a hard fallback to "no percentage" satisfies "must
+never crash" without pretending to a precision the evidence doesn't
+support. This is distinct from R3/R12's conclusion in one specific way:
+those investigated computing a percentage from data this app already reads
+(session logs) or from an undocumented cache file; this instead reads a
+number Claude Code itself already computed and is willing to print via its
+own public CLI entry point (`-p`), which is a materially different (and
+constitutionally distinct, post-amendment) trust boundary.
+
+**Alternatives considered**:
+- Parsing the `statusLine` hook's structured `rate_limits.*.used_percentage`
+  JSON — rejected for this feature: more reliable in principle, but only
+  obtainable via a configured hook invoked during a live interactive
+  session, not via an on-demand subprocess call from a menubar app.
+- Reading `~/.claude.json`'s `cachedUsageUtilization` directly (per R12) —
+  rejected again here for the same reason as R12: undocumented internal
+  file, not a "local session log," and it's someone else's server-computed
+  number of unknown freshness.
+- A stricter regex requiring an exact known layout — rejected: `strings`
+  evidence shows at least two differently-clustered renderings of the same
+  labels in the binary, so a rigid format assumption is more likely to
+  silently stop matching after a CLI update than a permissive one.
