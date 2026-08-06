@@ -125,18 +125,18 @@ class UsageMenuBarApp(rumps.App):
 
         self._refresh()
 
-        # Per `research.md` R10: a 60 s `rumps.Timer` keeps the dropdown
-        # current without user interaction (US2), on top of the immediate
-        # refresh above so the menu is never empty at launch. `rumps.Timer`
-        # runs on the main run loop (the same one `rumps.App.run()` later
-        # drives via `AppHelper.runEventLoop()`), so this reuses the same
-        # thread-safe `_refresh()` and requires no locking. Unlike the
-        # `@rumps.timer` decorator (which only auto-starts timers registered
-        # on a module-level list when `App.run()` is called), a `Timer`
-        # built directly like this must be started explicitly -- done here,
-        # in `__init__`, rather than in `run()`, so the timer is armed as
-        # soon as the app object exists.
-        self._timer = rumps.Timer(self._on_timer, 60)
+        # Per `research.md` R10/R14: a 5 min (300 s) `rumps.Timer` keeps the
+        # dropdown current without user interaction (US2), on top of the
+        # immediate refresh above so the menu is never empty at launch.
+        # `rumps.Timer` runs on the main run loop (the same one
+        # `rumps.App.run()` later drives via `AppHelper.runEventLoop()`), so
+        # this reuses the same thread-safe `_refresh()` and requires no
+        # locking. Unlike the `@rumps.timer` decorator (which only
+        # auto-starts timers registered on a module-level list when
+        # `App.run()` is called), a `Timer` built directly like this must be
+        # started explicitly -- done here, in `__init__`, rather than in
+        # `run()`, so the timer is armed as soon as the app object exists.
+        self._timer = rumps.Timer(self._on_timer, 300)
         self._timer.start()
 
     @staticmethod
@@ -254,8 +254,8 @@ class UsageMenuBarApp(rumps.App):
     def _on_refresh_clicked(self, sender):
         """`rumps.MenuItem` click callback (passed the `MenuItem` instance
         itself, per rumps' API) for the manual "Refresh" menu item: re-runs
-        the same `_refresh()` the 60 s timer calls, for on-demand updates
-        without waiting (US2/T018).
+        the same `_refresh()` the 5 min (300 s) timer calls, for on-demand
+        updates without waiting (US2/T018).
         """
         self._refresh()
 

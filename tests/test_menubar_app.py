@@ -94,6 +94,14 @@ def test_menu_order_session_week_then_buckets_then_refresh(app):
     assert items[9] is app._refresh_item
 
 
+def test_timer_interval_is_5_minutes(app):
+    """Per `research.md` R14, the single `rumps.Timer` that drives
+    `_refresh()` (both the FR-007 token totals and the FR-013 percentages
+    share it) must be widened to a 300 s (5 min) cadence.
+    """
+    assert app._timer.interval == 300
+
+
 def test_session_and_week_items_are_not_disabled(app):
     """These two items must render enabled/normal-colored, not
     greyed-out -- a `MenuItem` created with no `callback` renders

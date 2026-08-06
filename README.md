@@ -79,6 +79,44 @@ changes its wording), the two percentage rows are simply omitted and
 everything else — the token totals above — keeps working exactly as
 before, with no error and no crash.
 
+## Optional: Launchpad shortcut
+
+Everything above (clone + venv + `pip install` + `python menubar_app.py`) is
+the actual supported way to install and run this app — the steps below are
+entirely optional and skippable. They just wrap the app you've already
+cloned and installed so it also shows up in Launchpad and Spotlight like a
+regular app. This is **not** a packaged distributable: it doesn't bundle a
+Python interpreter or its dependencies, and it isn't code-signed, so it
+only works on the machine (and clone) it was built from.
+
+1. Open **Automator** (Applications > Automator, or search for it in
+   Spotlight).
+2. Choose **New Document**, then pick **Application** as the document
+   type.
+3. Search the actions library for **Run Shell Script** and drag it into
+   the workflow.
+4. Set the shell to `/bin/zsh` (or `/bin/bash`), leave "Pass input" as
+   whatever the default is (nothing here reads from stdin), and paste in:
+
+   ```bash
+   cd "/absolute/path/to/claude-usage-menubar" && exec .venv/bin/python3 menubar_app.py
+   ```
+
+   Replace `/absolute/path/to/claude-usage-menubar` with the actual path
+   to your own clone. The `cd` isn't cosmetic — `menubar_app.py` loads
+   `icon.png` via a relative path, so the working directory has to be the
+   project root or the icon won't load. Calling `.venv/bin/python3`
+   directly (rather than `source .venv/bin/activate`, which doesn't behave
+   the same way inside a Shell Script action) is what makes it use the
+   project's installed dependencies without needing an active shell
+   session.
+5. Save (Cmd+S) with a name like "Claude Usage Menubar.app", to
+   `/Applications` or `~/Applications`.
+6. It now appears in Launchpad and Spotlight like any other app. Launching
+   it just runs the same `menubar_app.py` clone on disk — there's nothing
+   else to keep in sync, as long as that file still exists at the path in
+   the script.
+
 ## Contributing
 
 ```bash

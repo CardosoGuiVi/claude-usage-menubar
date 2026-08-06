@@ -471,3 +471,48 @@ observation of their own live output, not a fresh `strings`/subprocess
 capture in this research environment — the same account-type limitation
 noted throughout this entry still applies to any further independent
 verification here.
+
+---
+
+## R14: Refresh interval unified to 5 minutes
+
+**Decision**: Widen the single `rumps.Timer` interval introduced in R10
+from 60 s to 300 s (5 min). The timer is still the one mechanism described
+in R10 — nothing about *how* refreshing happens changed, only *how often*.
+
+**Findings**: R10's original 60 s interval was chosen before FR-013
+existed, when the timer only had to re-scan and re-aggregate local
+`.jsonl` files (R9 measured 45 ms per pass — negligible at any reasonable
+cadence). Per R13, the same `_refresh()` call now also shells out to the
+`claude -p "/usage" --output-format json` subprocess on every tick to
+populate the FR-013 session/week percentages. A subprocess invocation is
+much more expensive and intrusive than a local file re-scan, and the data
+it returns — Claude Code's own rate-limit percentages — only needs to be
+"reasonably current," not updated every minute; a 60 s cadence for it is
+unnecessarily frequent. Because `menubar_app.py` has only ever had one
+timer driving `_refresh()` (confirmed by inspection — there is no second,
+separate timer for the percentages), the token-total refresh and the
+percentage refresh cannot be decoupled onto different cadences without
+adding a second timer, extra scheduling state, and the synchronization
+complexity that comes with two independently-firing refreshes touching
+the same menu items. Constitution Principle V (simplicity over
+generality) rejects that complexity for a benefit — a faster token-total
+refresh — that R9 already showed is not the bottleneck. Widening the one
+shared interval to 300 s satisfies both sides at once: it remains well
+within SC-003's "reflected within one polling interval" bar (now updated
+to "about five minutes" — see `spec.md`), and it cuts the `claude`
+subprocess call rate by 5×.
+
+**Rationale**: A single shared timer stays the simplest design (per R10
+and Principle V); the interval value is the only knob available for
+easing the added subprocess cost from R13, so it was moved from 60 s to
+300 s for both the token totals and the percentages together.
+
+**Alternatives considered**:
+- Two separate timers (fast for token totals, slow for percentages) —
+  rejected: adds a second `rumps.Timer`, second callback, and doubles the
+  surface for menu-mutation ordering bugs, for a benefit (faster
+  percentage or token-total updates) neither R9 nor R13 shows is needed.
+- Leaving the interval at 60 s — rejected: means running the `claude`
+  subprocess up to once a minute indefinitely for data that changes far
+  less often than that, with no corresponding benefit to the user.

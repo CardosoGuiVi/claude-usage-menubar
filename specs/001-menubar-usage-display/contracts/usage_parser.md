@@ -94,7 +94,8 @@ consumes it.
 
 Not a code API, but the constraints the thin shell must honor:
 
-- Calls `get_summary()` on a `rumps.Timer` tick (60 s) and once at startup.
+- Calls `get_summary()` on a `rumps.Timer` tick (5 min / 300 s) and once at
+  startup.
 - Performs **no** parsing, bucketing, or arithmetic on token values — it only
   reads fields off `UsageSummary` and passes them to `format_tokens`.
 - Renders a static menu bar icon; all figures live in the dropdown
