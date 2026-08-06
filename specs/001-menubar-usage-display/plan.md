@@ -7,7 +7,7 @@
 ## Summary
 
 A macOS menu bar app that reads Claude Code's local session logs and shows
-token usage in a dropdown, refreshed on a 60-second timer. Two modules enforce
+token usage in a dropdown, refreshed on a 5-minute (300 s) timer. Two modules enforce
 the constitution's pure-core/thin-UI split: `usage_parser.py` (stdlib only,
 no `rumps`) locates and parses `~/.claude/projects/**/*.jsonl`, deduplicates
 assistant turns, and aggregates them into windowed totals; `menubar_app.py`
@@ -81,7 +81,7 @@ specs/001-menubar-usage-display/
 ```text
 claude-usage-menubar/
 ├── usage_parser.py          # Pure core: discovery, parsing, dedup, aggregation
-├── menubar_app.py           # Thin rumps.App: icon, dropdown, 60s timer
+├── menubar_app.py           # Thin rumps.App: icon, dropdown, 5 min (300s) timer
 ├── tests/
 │   ├── test_usage_parser.py # Unit tests over the core
 │   └── fixtures/            # Small .jsonl files: normal, duplicate message.id,

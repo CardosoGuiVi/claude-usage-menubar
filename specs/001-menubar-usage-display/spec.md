@@ -93,13 +93,13 @@ As a new user who has never used this tool before, I want to clone the repositor
 
 - **SC-001**: A first-time user can go from cloning the repository to seeing live usage data in their menu bar in under 5 minutes, using only the README instructions.
 - **SC-002**: Token-count figures shown in the dropdown are traceable back to, and consistent with, the same underlying local session data that powers Claude Code's own `/usage` command. Specifically, each assistant message is counted exactly once (no duplicate-line inflation). This traceability guarantee covers FR-007's raw token counts only; the FR-013 percentage figures are sourced directly from Claude Code's own `/usage` output rather than computed by this app, so their accuracy is bounded by that output, not by this success criterion.
-- **SC-003**: Newly-recorded Claude Code usage is reflected in the menu bar display within one polling interval (no more than a couple of minutes) without any user action.
+- **SC-003**: Newly-recorded Claude Code usage is reflected in the menu bar display within one polling interval (no more than about five minutes) without any user action.
 - **SC-004**: The app runs without errors or crashes when local usage logs are missing, empty, or only partially written.
 - **SC-005**: The entire setup and normal operation of the app requires zero network requests and zero credential entry.
 
 ## Assumptions
 
-- The refresh/polling interval defaults to a short, unobtrusive period (on the order of a minute); the exact value is an implementation detail, not a user-facing configuration requirement for this version.
+- The refresh/polling interval defaults to a short, unobtrusive period (on the order of minutes, currently 5 minutes); the exact value is an implementation detail, not a user-facing configuration requirement for this version.
 - Usage aggregation covers all local Claude Code session logs found on the machine (all projects), not scoped to a single project directory, since the goal is an overall usage picture matching `/usage`.
 - A single local user/machine and a single active Claude Code account are assumed; multi-account or multi-profile switching is out of scope for this version.
 - The menu bar icon itself does not need to render dynamic text or numbers; all usage figures are surfaced in the dropdown shown after a click, keeping the status bar presence minimal.

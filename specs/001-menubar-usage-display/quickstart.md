@@ -128,7 +128,7 @@ final line from Claude Code writing concurrently.
 ### V6 — Auto-refresh reflects new usage (FR-006, SC-003)
 
 With the app running, note the **Today** figure, then run a Claude Code session
-that consumes tokens. Wait up to 60 seconds and reopen the dropdown.
+that consumes tokens. Wait up to 5 minutes and reopen the dropdown.
 
 **Expected**: **Today** and **Last 5 hours** have increased without any manual
 action. Reopening again with no further activity leaves the numbers unchanged

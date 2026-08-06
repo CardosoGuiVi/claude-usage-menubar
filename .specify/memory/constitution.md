@@ -1,39 +1,28 @@
 <!--
 Sync Impact Report
 ===================
-Version change: 1.0.0 → 1.1.0
-Rationale: MINOR bump — a new principle (VI) was added and the technical
-constraints' data-source line was materially expanded, per this
-constitution's own versioning policy ("MINOR: a new principle or section
-is added, or existing guidance is materially expanded"). No existing
-principle was removed or redefined.
+Version change: 1.1.0 → 1.1.1
+Rationale: PATCH bump — a clarifying note was added to Principle IV
+scoping in an optional Automator/Launchpad launcher wrapper as
+compatible with the existing "no polished distribution" constraint.
+No principle's substantive requirements changed (py2app/pyinstaller/
+code-signing/Homebrew/LaunchAgent-autostart remain out of scope, the
+"clone and run" install path is unchanged for anyone who skips the new
+README section), so this is a clarification, not new/expanded
+guidance, per the versioning policy's PATCH tier.
 
 Modified principles: none redefined.
-  - Technical Constraints → data source line amended: local session
-    `.jsonl` logs remain the source for token totals, but a local
-    subprocess call to the Claude Code CLI itself (`claude -p "/usage"
-    --output-format json`) is now also permitted, scoped specifically to
-    session/week usage percentages. This is distinguished from the
-    prior blanket "no network calls, no external API" wording because it
-    invokes a locally-installed binary (not a raw network socket, no API
-    key or credentials read/stored by this app) — see `research.md` R13
-    for the evidence (zero token cost / zero API turns on this call).
+  - IV. No Polished Distribution for the MVP → added one clarifying
+    paragraph distinguishing a documented, optional Automator launcher
+    wrapper from the packaging/signing/distribution mechanisms this
+    principle rules out.
 
-Added sections:
-  - VI. Graceful Degradation for Unstable External Formats (new principle)
+Added sections: none
 
 Removed sections: none
 
-Templates requiring follow-up review:
-  - .specify/templates/plan-template.md — ⚠ pending manual check that its
-    Constitution Check gates reference Principle VI where a task depends
-    on parsing another program's output
-  - .specify/templates/spec-template.md — no constitution-specific
-    dependency detected; no change required
-  - .specify/templates/tasks-template.md — no constitution-specific
-    dependency detected; no change required
-  - .specify/templates/checklist-template.md — no constitution-specific
-    dependency detected; no change required
+Templates requiring follow-up review: none beyond what prior amendments
+already flagged.
 
 Deferred items / TODOs: none.
 -->
@@ -77,6 +66,15 @@ clones the repo, runs a simple install script (venv + pip), and the app
 works. Autostart MAY be revisited as a future iteration but is explicitly
 not part of the MVP. Rationale: keeps early effort focused on core value
 (usage visibility) instead of distribution polish.
+
+A README section documenting how to wrap the already-installed clone in a
+thin Automator/Script Editor `.app` launcher (so it appears in
+Launchpad/Spotlight) does not violate this principle: it bundles no
+Python interpreter or dependencies, involves no code signing, and does
+not change or replace the "clone and run" install path this principle
+requires — it is a personal-convenience step layered on top of a working
+install, not a distribution mechanism, and any contributor or user who
+doesn't want it can simply skip that section.
 
 ### V. Simplicity Over Generality
 The scope is specifically a Claude Code status bar app — not a generic
@@ -142,4 +140,4 @@ adjusting the task, not by ignoring the principle.
   data constraint). Any deviation MUST be justified explicitly in the plan
   or rejected in favor of a compliant approach.
 
-**Version**: 1.1.0 | **Ratified**: 2026-08-04 | **Last Amended**: 2026-08-06
+**Version**: 1.1.1 | **Ratified**: 2026-08-04 | **Last Amended**: 2026-08-06
