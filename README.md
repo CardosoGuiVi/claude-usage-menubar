@@ -48,15 +48,36 @@ Each bucket's dropdown row shows its combined total, and opening it as a
 submenu reveals the same total split into **Input**, **Output**, **Cache
 Read**, and **Cache Creation** token counts.
 
-### Why isn't there a percentage-of-quota figure?
+If it's available, the dropdown also shows two more rows — **Session
+Usage** and **Week Usage** — with the percentage-used figures Claude Code's
+own `/usage` command reports. See below for where those come from and what
+happens when they aren't available.
 
-Because it can't be computed truthfully from what's on disk. Your plan's
-quota and its reset time live on Anthropic's servers, not in your local
-session logs — there is nothing in those files that identifies a limit or a
-reset countdown. Showing a number would mean either calling an authenticated
-API (which this app deliberately never does) or guessing at a limit, which
-would just be misleading. So this app shows exactly what it can back up:
-real, local token counts, and nothing more.
+### Where do the token counts and the percentages each come from?
+
+The raw token counts above (Today, Current Session, Last 5 Hours, All Time)
+are computed entirely from your local session logs under
+`~/.claude/projects/` — nothing is guessed, and no network request is
+involved. Your plan's quota and its reset time live on Anthropic's servers,
+not in those local logs, so this app never derives a percentage-of-quota
+figure from them itself.
+
+The **Session Usage** / **Week Usage** rows are different: they're read
+directly from Claude Code's own `/usage` output, by running the `claude`
+CLI you already have installed (`claude -p "/usage" --output-format json`)
+as a local subprocess and parsing the percentages it reports. This is not a
+network call this app makes — it's asking a binary already on your machine
+to report a number it already computed, the same way running `/usage`
+yourself in a Claude Code session would. This app never opens a network
+socket and never reads or stores an API key or any other credential.
+
+Because that subprocess call depends on Claude Code's own text output — not
+a stable, documented data format — it's treated as a best-effort
+enhancement. If the `claude` binary isn't installed, isn't on your `PATH`,
+or its output can't be parsed (including if a future Claude Code update
+changes its wording), the two percentage rows are simply omitted and
+everything else — the token totals above — keeps working exactly as
+before, with no error and no crash.
 
 ## Contributing
 
