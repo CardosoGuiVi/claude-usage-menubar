@@ -236,3 +236,60 @@ lint plus tests enforced by CI (`.github/workflows/ci.yml`), with an optional
 local pre-commit convenience (`core.hooksPath`) for fast local feedback. The
 dedup behavior from R2 is the most important thing to pin with a regression
 test.
+
+---
+
+## R12: Percentage-of-quota revisited post-launch — still not derivable locally
+
+**Decision**: Re-affirm R3. Continue shipping raw token counts only; do not
+add session/week usage percentages in any form.
+
+**Findings**: Investigated whether third-party tools solve what R3 could not.
+
+- **ccusage** (ryoppippi/ccusage) computes cost/token totals and a naive
+  linear burn-rate projection over 5-hour blocks, but has no
+  percentage-of-plan-limit feature and no weekly window at all — not a
+  precedent for this.
+- **Claude-Code-Usage-Monitor** (Maciek-roboblog) hardcodes per-plan token
+  ceilings (Pro 19,000 / Max5 88,000 / Max20 220,000 / Team 19,000
+  "unverified") as a **local estimate**, selected via a manual `--plan` flag
+  — it never auto-detects the plan tier. Its 5-hour session percentage is
+  this rough estimate divided by the hardcoded ceiling. It explicitly does
+  **not** compute a weekly percentage locally at all (`snapshots.py`: *"the
+  analysis window is ~8 days, not 7"*); the weekly figure only appears via
+  Claude Code's own statusline hook or an opt-in authenticated call to
+  Anthropic's undocumented `api.anthropic.com/api/oauth/usage`.
+- Checked whether Claude Code stores the account's plan tier locally: not
+  under `~/.claude/` (`settings.json`, `stats-cache.json` have no tier
+  fields), but **`~/.claude.json`** (a sibling file, not inside
+  `~/.claude/`) does — `oauthAccount.organizationType` (e.g. `"claude_pro"`)
+  and a `cachedUsageUtilization` block carrying `five_hour`/`seven_day`
+  `utilization` percentages and `resets_at` timestamps. This is a
+  server-fetched cache of Anthropic's own computed numbers, of undocumented
+  refresh cadence — not something derived from the `.jsonl` session logs,
+  and outside this project's local-session-logs-only data source. Session
+  `.jsonl` logs themselves still carry no plan/tier field anywhere (matches
+  R3); the only tier-like field is the unrelated `usage.service_tier`
+  (API request-priority, e.g. `"standard"`).
+
+**Conclusion**: the only two paths to a percentage are (a) an approximate,
+hardcoded-limit local estimate with no reliable weekly equivalent, mirroring
+Claude-Code-Usage-Monitor's own compromise, or (b) reading Claude Code's
+internal `~/.claude.json` cache, which is an undocumented format outside this
+project's declared data source (`~/.claude/projects/**/*.jsonl`) and would
+mean displaying a server-computed number verbatim rather than anything this
+app derives itself. Neither satisfies SC-002's traceability bar or this
+project's scope. R3's decision stands: FR-007 stays raw-token-counts-only.
+Users who want a percentage can compare the displayed totals against their
+own known plan limit manually.
+
+**Alternatives considered**:
+- Hardcoded per-plan ceilings (à la Claude-Code-Usage-Monitor) — rejected:
+  Anthropic doesn't publish these as a stable contract, so the ceilings would
+  silently go stale as plans change, producing a confidently wrong number
+  rather than no number.
+- Reading `~/.claude.json`'s `cachedUsageUtilization` directly — rejected:
+  it's an undocumented internal Claude Code file (also carrying account UUID
+  and email), not a "local session log," and the app would just be
+  re-displaying someone else's server-computed figure of unknown freshness,
+  not computing anything itself.
