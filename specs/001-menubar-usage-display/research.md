@@ -516,3 +516,75 @@ easing the added subprocess cost from R13, so it was moved from 60 s to
 - Leaving the interval at 60 s — rejected: means running the `claude`
   subprocess up to once a minute indefinitely for data that changes far
   less often than that, with no corresponding benefit to the user.
+
+---
+
+## R15: Absolute `claude` binary path required for Automator-launched processes
+
+**Decision**: Resolve the `claude` binary to an absolute path before
+invoking it, instead of passing the bare literal `"claude"` as argv[0]
+and relying on `subprocess.run`'s own PATH lookup. Fallback chain: (1) a
+module-level constant, `CLAUDE_BINARY_PATH = "/opt/homebrew/bin/claude"`
+(the confirmed real path on this machine, Homebrew on Apple Silicon); (2)
+`shutil.which("claude")` if that constant path doesn't exist or isn't
+executable; (3) `None` — short-circuit to the empty `UsagePercentages()`
+without even attempting `subprocess.run()` — if neither yields a usable
+path.
+
+**Findings**: The README's "Optional: Launchpad shortcut" section
+documents wrapping the app in an Automator "Run Shell Script" `.app` so it
+appears in Launchpad/Spotlight (per Constitution Principle IV's carve-out
+for this specific wrapper). Automator's "Run Shell Script" action invokes
+`/bin/zsh -c <script>` as a **non-login, non-interactive** shell — it does
+not source `~/.zshrc`, `~/.zprofile`, or any of the files that normally
+populate a Terminal session's PATH with Homebrew's `/opt/homebrew/bin`.
+The process's PATH is instead whatever launchd hands a GUI-launched app
+(typically just `/usr/bin:/bin:/usr/sbin:/sbin`), which does not include
+`/opt/homebrew/bin`. `get_usage_percentages()` previously called
+`subprocess.run(["claude", ...])`, which relies on the OS resolving
+`"claude"` against that PATH; under the Automator launch path this fails
+with `FileNotFoundError`, which R13's existing exception handling already
+catches — so the app doesn't crash, but per Constitution Principle VI this
+degrades to "no percentage available" *every time* the app is launched
+this way, silently defeating FR-013 for exactly the launch method the
+README itself documents. Launching `menubar_app.py` directly from a
+Terminal session (the primary, non-optional install path) was and remains
+unaffected, since a login/interactive shell's inherited PATH does include
+Homebrew's bin directory.
+
+**Rationale**: A plain named constant (`CLAUDE_BINARY_PATH`), not an
+environment-variable-driven or otherwise runtime-configurable setting, per
+Constitution Principle V ("Simplicity Over Generality"): this project
+explicitly rejects "configurable backends" as complexity serving only
+hypothetical future use cases, and this is a single-machine personal tool
+— the constant lives in one obvious place in `usage_percentage.py`,
+directly editable by anyone whose install path differs, without adding an
+env-var surface, a settings file, or any other configuration mechanism.
+The `shutil.which("claude")` fallback is not itself a configuration
+surface — it's a second, still-fully-automatic resolution strategy that
+covers other real install locations (e.g. Intel Homebrew's
+`/usr/local/bin/claude`) or environments where PATH genuinely does include
+`claude` (e.g. the direct-Terminal-launch path), without requiring the
+user to set anything.
+
+**Alternatives considered**:
+- An environment variable (e.g. `CLAUDE_USAGE_MENUBAR_CLAUDE_BIN`) read at
+  startup — rejected: exactly the kind of configurable-backend complexity
+  Principle V prohibits for a project with one supported, narrow purpose;
+  also useless for the Automator launch path specifically, since setting
+  an env var for that launcher requires editing the same Automator script
+  that could instead just hardcode the resolved path directly.
+- Hardcoding the resolved path directly into the Automator script's shell
+  command instead of fixing it in `usage_percentage.py` — rejected: fixes
+  only the Automator launch path (and only for users who remember to do
+  it), leaving the direct-Terminal launch path's `subprocess.run(["claude",
+  ...])` call exposed to the same class of failure on any machine/shell
+  configuration where `claude` isn't actually on PATH; fixing it once in
+  the shared core function covers every launch path.
+- Only using `shutil.which("claude")` (no hardcoded constant) — rejected:
+  `shutil.which()` still consults the *calling process's own* PATH
+  environment variable, so under the Automator launch path it would fail
+  exactly the same way the original bare-`"claude"` `subprocess.run` call
+  did; a hardcoded absolute path is required to actually solve the
+  PATH-inheritance problem, with `shutil.which()` only useful as a
+  secondary fallback for other machines/installs.

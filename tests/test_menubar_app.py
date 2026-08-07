@@ -27,7 +27,7 @@ import menubar_app
 import usage_parser
 import usage_percentage
 from usage_parser import TokenTotals, UsageSummary
-from usage_percentage import UsagePercentages, format_bar
+from usage_percentage import UsagePercentages
 
 
 def _make_summary() -> UsageSummary:
@@ -233,13 +233,9 @@ class TestUsagePercentages:
         ):
             app._refresh()
 
-        assert app._session_pct_item.title == (
-            f"Session: {format_bar(45)} 45%   (Resets 8:10pm)"
-        )
+        assert app._session_pct_item.title == "Session: 45% used  (Resets 8:10pm)"
         assert not app._session_pct_item.hidden
-        assert app._week_pct_item.title == (
-            f"Week:    {format_bar(12)} 12%   (Resets Aug 9, 12pm)"
-        )
+        assert app._week_pct_item.title == "Week: 12% used  (Resets Aug 9, 12pm)"
         assert not app._week_pct_item.hidden
         assert app.title == "45% · 12%"
 
@@ -255,8 +251,8 @@ class TestUsagePercentages:
         ):
             app._refresh()
 
-        assert app._session_pct_item.title == f"Session: {format_bar(45)} 45%"
-        assert app._week_pct_item.title == f"Week:    {format_bar(12)} 12%"
+        assert app._session_pct_item.title == "Session: 45% used"
+        assert app._week_pct_item.title == "Week: 12% used"
 
     def test_only_session_present_week_hidden(self, app):
         with mock.patch.object(
@@ -267,7 +263,7 @@ class TestUsagePercentages:
             app._refresh()
 
         # 0% must still show (falsy-but-not-missing), not be hidden.
-        assert app._session_pct_item.title == f"Session: {format_bar(0)} 0%"
+        assert app._session_pct_item.title == "Session: 0% used"
         assert not app._session_pct_item.hidden
         assert app._week_pct_item.hidden
         # Partial availability: keep the two-part shape, em dash for the
@@ -283,7 +279,7 @@ class TestUsagePercentages:
             app._refresh()
 
         assert app._session_pct_item.hidden
-        assert app._week_pct_item.title == f"Week:    {format_bar(99)} 99%"
+        assert app._week_pct_item.title == "Week: 99% used"
         assert not app._week_pct_item.hidden
         assert app.title == "– · 99%"
 
@@ -323,8 +319,8 @@ class TestUsagePercentages:
         assert app._today_item.hidden
         assert not app._empty_state_item.hidden
         # ...but the percentage items are unaffected by it.
-        assert app._session_pct_item.title == f"Session: {format_bar(7)} 7%"
+        assert app._session_pct_item.title == "Session: 7% used"
         assert not app._session_pct_item.hidden
-        assert app._week_pct_item.title == f"Week:    {format_bar(3)} 3%"
+        assert app._week_pct_item.title == "Week: 3% used"
         assert not app._week_pct_item.hidden
         assert app.title == "7% · 3%"

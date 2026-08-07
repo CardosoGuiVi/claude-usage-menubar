@@ -14,15 +14,38 @@ obtain or parse it degrades to "no percentage available" rather than
 crashing or blocking the rest of the app. See `research.md` R13 for the
 regexes, the evidence they're based on, and the fixture strings used in
 this module's tests.
+
+Per `research.md` R15: this module resolves the `claude` binary by an
+absolute path rather than relying on a bare `"claude"` argv[0] and PATH
+lookup, because the app is sometimes launched via an Automator "Run Shell
+Script" wrapper (see README's "Optional: Launchpad shortcut" section) whose
+process environment does not inherit the user's login-shell PATH/`.zshrc`
+-- a bare `"claude"` silently resolves to nothing in that context, which
+(per Principle VI) degrades to "no percentage available" without crashing,
+but also never obtains real data, defeating the point of the feature. See
+`_resolve_claude_binary()` for the fallback chain.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
 import subprocess
 from dataclasses import dataclass
-from math import floor
+
+# Per `research.md` R15: the confirmed real path of the Homebrew-installed
+# `claude` binary on the machine this project is developed on (Apple
+# Silicon). A plain named constant, not an environment-variable-driven
+# config surface -- Constitution Principle V rejects configurable-backend
+# complexity for what is a single-machine personal tool; "configurable"
+# here just means "a named constant in one obvious place," not something
+# meant to vary at runtime. `_resolve_claude_binary()` below still falls
+# back to a PATH lookup for other install locations (e.g. Intel Homebrew's
+# `/usr/local/bin/claude`, or any environment where PATH genuinely does
+# include it), so this constant does not need to be exhaustive.
+CLAUDE_BINARY_PATH = "/opt/homebrew/bin/claude"
 
 # Per `research.md` R13: verbatim, evidenced/tested regexes. Permissive and
 # whitespace/punctuation-tolerant (`[^\d%]{0,40}`) since the exact spacing
@@ -109,32 +132,38 @@ def _extract_reset(pattern: re.Pattern[str], text: str) -> str | None:
     return value or None
 
 
-def format_bar(pct: int | None, width: int = 10) -> str:
-    """Render a block-character progress bar for `pct` out of 100.
+def _resolve_claude_binary() -> str | None:
+    """Resolve the `claude` binary to an absolute path, or `None` if it
+    cannot be found anywhere.
 
-    Never raises, per Constitution Principle VI: `pct is None` (or any
-    out-of-range value, clamped into `[0, 100]` first) simply renders an
-    all-empty bar rather than erroring, since callers may pass this
-    straight through without their own None-guard.
+    Per `research.md` R15: this exists because a bare `"claude"` argv[0]
+    relies on `subprocess.run`'s own PATH lookup, which silently fails when
+    this app is launched via an Automator "Run Shell Script" wrapper (see
+    README's "Optional: Launchpad shortcut" section) -- that launch path
+    does not inherit the user's login-shell PATH/`.zshrc`, so `"claude"`
+    resolves to nothing even though it's installed and would resolve fine
+    from a normal Terminal session.
 
-    Uses round-half-up (`floor(pct / 100 * width + 0.5)`), not Python's
-    banker's-rounding `round()`, so e.g. 45% at width=10 (4.5 blocks)
-    rounds up to 5 filled blocks rather than down to 4.
+    Fallback chain: (1) `CLAUDE_BINARY_PATH`, the confirmed Homebrew
+    Apple-Silicon install location, if it exists on disk and is executable;
+    (2) `shutil.which("claude")`, which still consults the calling
+    process's actual PATH and so covers other install locations (e.g.
+    Intel Homebrew's `/usr/local/bin/claude`) or environments where PATH
+    genuinely does include it; (3) `None` if neither yields a usable path.
     """
-    if pct is None:
-        filled = 0
-    else:
-        clamped = max(0, min(100, pct))
-        filled = floor(clamped / 100 * width + 0.5)
-        filled = max(0, min(width, filled))
-    return "▓" * filled + "░" * (width - filled)
+    if os.path.isfile(CLAUDE_BINARY_PATH) and os.access(CLAUDE_BINARY_PATH, os.X_OK):
+        return CLAUDE_BINARY_PATH
+    return shutil.which("claude")
 
 
 def get_usage_percentages(timeout: float = 5.0) -> UsagePercentages:
-    """Run `claude -p "/usage" --output-format json` and parse the result.
+    """Resolve the `claude` binary (see `_resolve_claude_binary()` and
+    `research.md` R15), run `claude -p "/usage" --output-format json`, and
+    parse the result.
 
-    Never raises. Every failure mode -- the `claude` binary not being on
-    `PATH` (`FileNotFoundError`), the subprocess hanging
+    Never raises. Every failure mode -- the `claude` binary not being
+    resolvable at all (see `_resolve_claude_binary()`), the resolved path
+    disappearing before exec (`FileNotFoundError`), the subprocess hanging
     (`subprocess.TimeoutExpired`), any other OS-level failure (`OSError`),
     stdout bytes that aren't valid text in the local codec
     (`UnicodeDecodeError`, which `subprocess.run(text=True)` can raise and
@@ -142,7 +171,7 @@ def get_usage_percentages(timeout: float = 5.0) -> UsagePercentages:
     explicitly rather than assumed), a nonzero exit code, non-JSON stdout, a
     JSON value that isn't a dict, or a missing/non-string `"result"` field
     -- degrades to the empty `UsagePercentages()` rather than propagating an
-    exception, per Constitution Principle VI and `research.md` R13.
+    exception, per Constitution Principle VI and `research.md` R13/R15.
 
     The outer `try`/`except Exception` is deliberate defense-in-depth on top
     of the specific handling below: `menubar_app._refresh()` calls this
@@ -177,16 +206,31 @@ def _get_usage_percentages_unsafe(timeout: float) -> UsagePercentages:
     clauses below stay meaningful documentation of the failure modes we
     actually expect, while the outer function's blanket `except Exception`
     is a last-resort safety net, not the primary handling mechanism.
+
+    Per `research.md` R15: resolves the `claude` binary to an absolute path
+    via `_resolve_claude_binary()` first. If that returns `None`, there is
+    no binary to run at all, so this returns the empty `UsagePercentages()`
+    immediately without even attempting `subprocess.run()` -- per
+    Constitution Principle VI this is a normal, expected degradation, not
+    an error. Otherwise the resolved absolute path is passed as argv[0]
+    instead of the literal string `"claude"`.
     """
+    claude_binary = _resolve_claude_binary()
+    if claude_binary is None:
+        return UsagePercentages()
+
     try:
         completed = subprocess.run(
-            ["claude", "-p", "/usage", "--output-format", "json"],
+            [claude_binary, "-p", "/usage", "--output-format", "json"],
             capture_output=True,
             text=True,
             timeout=timeout,
             check=False,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError, UnicodeDecodeError):
+        # Defense-in-depth: e.g. a race where the resolved path stops
+        # existing between `_resolve_claude_binary()`'s check and this
+        # exec, or a permissions problem not caught by `os.access()` above.
         return UsagePercentages()
 
     try:
