@@ -4,6 +4,8 @@ A macOS menu bar app that shows your Claude Code token usage — Today,
 Current Session, Last 5 Hours, and All Time — computed entirely from your
 local session logs, with no network calls.
 
+![Screenshot of the menu bar dropdown showing Session and Week usage percentages, plus Today, Current Session, Last 5 Hours, and All Time token totals](image.png)
+
 ## Prerequisites
 
 - macOS (the only supported platform)
