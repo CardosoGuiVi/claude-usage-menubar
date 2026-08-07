@@ -1,5 +1,4 @@
-"""Unit tests for `usage_percentage.get_usage_percentages()` and
-`usage_percentage.format_bar()`.
+"""Unit tests for `usage_percentage.get_usage_percentages()`.
 
 Per `research.md` R13, this module shells out to the `claude` CLI; these
 tests never invoke a real subprocess -- `subprocess.run` is mocked in every
@@ -14,6 +13,19 @@ the same JSON envelope shape R13 describes for the real captured `claude
 -p "/usage" --output-format json` output (a `"result"` string field
 alongside cost/turn/session metadata), then `json.dumps`'d to stand in for
 the mocked stdout.
+
+Per `research.md` R15, `_get_usage_percentages_unsafe()` now resolves the
+`claude` binary via `_resolve_claude_binary()` *before* ever calling
+`subprocess.run()`. Every test below that expects `subprocess.run` to
+actually be invoked (and its mocked return value/side_effect to matter)
+therefore also patches `usage_percentage._resolve_claude_binary` to return
+a fixed dummy path via the module-scoped `_patch_resolve_claude_binary`
+autouse fixture below -- without it, these tests would silently depend on
+whether a real `claude` binary happens to exist on whatever machine runs
+them, rather than actually exercising the mocked `subprocess.run`. The
+resolver-fallback behavior itself (missing configured path, `shutil.which`
+fallback, both absent) is covered by its own dedicated tests, which
+override/bypass this fixture as needed.
 """
 
 from __future__ import annotations
@@ -22,7 +34,10 @@ import json
 import subprocess
 from unittest import mock
 
-from usage_percentage import UsagePercentages, format_bar, get_usage_percentages
+import pytest
+
+import usage_percentage
+from usage_percentage import UsagePercentages, get_usage_percentages
 
 FIXTURE_NORMAL = (
     "Current session               45% used   resets 8:10pm\n"
@@ -81,6 +96,25 @@ def _completed(stdout: str, returncode: int = 0) -> subprocess.CompletedProcess:
 
 
 class TestGetUsagePercentages:
+    @pytest.fixture(autouse=True)
+    def _fixed_claude_binary(self):
+        """Patch `_resolve_claude_binary()` to a fixed dummy path for every
+        test in this class, per `research.md` R15.
+
+        `_get_usage_percentages_unsafe()` now calls `_resolve_claude_binary()`
+        *before* `subprocess.run()`; without this fixture these tests would
+        silently depend on whether a real `claude` binary happens to exist
+        (at `usage_percentage.CLAUDE_BINARY_PATH` or on `PATH`) on whatever
+        machine runs them, rather than actually exercising the mocked
+        `subprocess.run` below -- almost certainly absent on a CI runner,
+        likely present on a dev machine that has Claude Code installed,
+        which would make the suite non-portable.
+        """
+        with mock.patch.object(
+            usage_percentage, "_resolve_claude_binary", return_value="/fake/claude"
+        ):
+            yield
+
     def test_normal_output_parses_both_percentages(self) -> None:
         with mock.patch(
             "subprocess.run", return_value=_completed(_envelope(FIXTURE_NORMAL))
@@ -259,26 +293,56 @@ class TestGetUsagePercentages:
         )
 
 
-class TestFormatBar:
-    def test_zero_percent_is_all_empty(self) -> None:
-        assert format_bar(0) == "░" * 10
+class TestResolveClaudeBinary:
+    """Per `research.md` R15: `_resolve_claude_binary()`'s fallback chain.
 
-    def test_24_percent_rounds_to_two_filled(self) -> None:
-        # 24 / 100 * 10 = 2.4 -> round-half-up -> 2 filled.
-        assert format_bar(24) == "▓" * 2 + "░" * 8
+    Deliberately does NOT use `TestGetUsagePercentages`'s
+    `_fixed_claude_binary` autouse fixture -- these tests exercise the
+    resolver itself, so they patch `usage_percentage.CLAUDE_BINARY_PATH`
+    and `shutil.which` directly instead.
+    """
 
-    def test_45_percent_rounds_up_to_five_filled(self) -> None:
-        # 45 / 100 * 10 = 4.5 -> round-half-up (not banker's rounding) -> 5.
-        assert format_bar(45) == "▓" * 5 + "░" * 5
+    def test_configured_path_missing_and_no_path_fallback_short_circuits(
+        self,
+    ) -> None:
+        """Simulates "a different machine": the configured absolute path
+        doesn't exist there, and PATH doesn't have `claude` either. Must
+        gracefully degrade to the empty result, and -- critically -- must
+        never even call `subprocess.run`, proving the short-circuit
+        actually happens rather than merely happening to produce the same
+        empty result via the existing `FileNotFoundError` catch.
+        """
+        with (
+            mock.patch.object(
+                usage_percentage, "CLAUDE_BINARY_PATH", "/nonexistent/path/claude"
+            ),
+            mock.patch("shutil.which", return_value=None),
+            mock.patch("subprocess.run") as mock_run,
+        ):
+            result = get_usage_percentages()
 
-    def test_100_percent_is_all_filled(self) -> None:
-        assert format_bar(100) == "▓" * 10
+        assert result == UsagePercentages()
+        mock_run.assert_not_called()
 
-    def test_none_is_all_empty(self) -> None:
-        assert format_bar(None) == "░" * 10
+    def test_shutil_which_fallback_is_used_when_configured_path_missing(
+        self,
+    ) -> None:
+        """When the configured path doesn't exist but `shutil.which` finds
+        `claude` elsewhere (e.g. `/usr/local/bin/claude` on an Intel Mac),
+        that resolved path must be what's actually passed to
+        `subprocess.run` as argv[0].
+        """
+        with (
+            mock.patch.object(
+                usage_percentage, "CLAUDE_BINARY_PATH", "/nonexistent/path/claude"
+            ),
+            mock.patch("shutil.which", return_value="/usr/local/bin/claude"),
+            mock.patch(
+                "subprocess.run",
+                return_value=_completed(_envelope(FIXTURE_NORMAL)),
+            ) as mock_run,
+        ):
+            result = get_usage_percentages()
 
-    def test_negative_pct_is_clamped_to_all_empty(self) -> None:
-        assert format_bar(-10) == "░" * 10
-
-    def test_over_100_pct_is_clamped_to_all_filled(self) -> None:
-        assert format_bar(150) == "▓" * 10
+        assert result.session_pct == 45
+        assert mock_run.call_args.args[0][0] == "/usr/local/bin/claude"

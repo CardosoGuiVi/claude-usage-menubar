@@ -5,22 +5,21 @@ contract", this module performs no parsing, bucketing, or arithmetic on
 usage data itself -- it only reads fields off `UsageSummary` (and the
 `TokenTotals` it carries, via `.input`/`.output`/`.cache_read`/
 `.cache_creation`/`.total`) and formats them via `usage_parser.format_tokens`,
-and reads fields off `UsagePercentages` and formats them via
-`usage_percentage.format_bar` and plain string interpolation.
+and reads fields off `UsagePercentages` and formats them via plain string
+interpolation.
 
 Per FR-013, the dropdown's TOP two items -- Session and Week -- are sourced
 from `usage_percentage.get_usage_percentages()` rather than the local
-session logs, each rendered as a block-character progress bar
-(`usage_percentage.format_bar()`) alongside its percentage and, when
-available, its reset time (e.g. `Session: ▓▓░░░░░░░░ 24%   (Resets
-8:10pm)`). These are a best-effort enhancement (Constitution Principle VI)
-entirely independent of FR-008's empty-log-data state below: they are
-updated on every `_refresh()` call regardless of whether
-`summary.entry_count == 0`, and each is hidden individually when its own
-percentage field is `None` (e.g. it's valid for one to show while the
-other stays hidden). The current status bar title (visible without
-clicking the dropdown, per `self.title`) also mirrors both percentages at
-a glance, e.g. `24% · 45%`; see `_update_percentages()`.
+session logs, each rendered as plain text with its percentage and, when
+available, its reset time (e.g. `Session: 24% used  (Resets 8:10pm)`).
+These are a best-effort enhancement (Constitution Principle VI) entirely
+independent of FR-008's empty-log-data state below: they are updated on
+every `_refresh()` call regardless of whether `summary.entry_count == 0`,
+and each is hidden individually when its own percentage field is `None`
+(e.g. it's valid for one to show while the other stays hidden). The
+current status bar title (visible without clicking the dropdown, per
+`self.title`) also mirrors both percentages at a glance, e.g. `24% · 45%`;
+see `_update_percentages()`.
 
 Below a separator, the dropdown continues with four top-level line items
 (Today, Current Session, Last 5 Hours, All Time), each showing that
@@ -189,41 +188,32 @@ class UsageMenuBarApp(rumps.App):
             f"Cache Creation: {usage_parser.format_tokens(totals.cache_creation)}"
         )
 
-    # Both labels padded to the same width so the bars that follow them
-    # start in the same column (see the target menu layout in the module
-    # docstring) -- "Session:" (8 chars) plus one space is 9 chars, so
-    # "Week:" (5 chars) needs 4 trailing spaces to match.
-    _SESSION_LABEL = f"{'Session:':<9}"
-    _WEEK_LABEL = f"{'Week:':<9}"
-
     def _update_percentages(self, percentages):
         """Update the two FR-013 percentage items and the status bar title
         from a `usage_percentage.UsagePercentages`.
 
         Reads only its four fields (`.session_pct`/`.week_pct`/
         `.session_reset`/`.week_reset`) and formats each into a title via
-        plain string interpolation plus `usage_percentage.format_bar()` --
-        no parsing or arithmetic happens here, per the UI-side contract;
-        the bar rendering itself lives in the pure core. Each dropdown item
-        is shown/hidden independently of the other: a `None` percentage
-        hides that item, an `int` percentage (including `0`) shows it with
-        a block-character bar, the percentage, and -- only when the CLI
-        reported one -- a trailing `(Resets ...)` clause. Also sets
-        `self.title` (the text next to the menu bar icon, visible without
-        opening the dropdown) to both percentages at a glance, e.g.
-        `24% · 45%`; falls back to `None` (icon-only, no title text) only
-        when both percentages are unavailable, and uses an em dash "–" as
-        a placeholder for whichever single side is missing so the
-        session/week slots stay unambiguous.
+        plain string interpolation -- no parsing or arithmetic happens
+        here, per the UI-side contract. Each dropdown item is shown/hidden
+        independently of the other: a `None` percentage hides that item,
+        an `int` percentage (including `0`) shows it as plain text (e.g.
+        `Session: 24% used`), with -- only when the CLI reported one -- a
+        trailing `  (Resets ...)` clause. Also sets `self.title` (the text
+        next to the menu bar icon, visible without opening the dropdown)
+        to both percentages at a glance, e.g. `24% · 45%`; falls back to
+        `None` (icon-only, no title text) only when both percentages are
+        unavailable, and uses an em dash "–" as a placeholder for
+        whichever single side is missing so the session/week slots stay
+        unambiguous.
         """
         if percentages.session_pct is None:
             self._session_pct_item.hide()
             session_title_part = "–"
         else:
-            bar = usage_percentage.format_bar(percentages.session_pct)
-            title = f"{self._SESSION_LABEL}{bar} {percentages.session_pct}%"
+            title = f"Session: {percentages.session_pct}% used"
             if percentages.session_reset:
-                title += f"   (Resets {percentages.session_reset})"
+                title += f"  (Resets {percentages.session_reset})"
             self._session_pct_item.title = title
             self._session_pct_item.show()
             session_title_part = f"{percentages.session_pct}%"
@@ -232,10 +222,9 @@ class UsageMenuBarApp(rumps.App):
             self._week_pct_item.hide()
             week_title_part = "–"
         else:
-            bar = usage_percentage.format_bar(percentages.week_pct)
-            title = f"{self._WEEK_LABEL}{bar} {percentages.week_pct}%"
+            title = f"Week: {percentages.week_pct}% used"
             if percentages.week_reset:
-                title += f"   (Resets {percentages.week_reset})"
+                title += f"  (Resets {percentages.week_reset})"
             self._week_pct_item.title = title
             self._week_pct_item.show()
             week_title_part = f"{percentages.week_pct}%"
